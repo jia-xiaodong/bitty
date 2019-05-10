@@ -510,6 +510,8 @@ class OpenDocDlg(jtk.ModalDialog):
         self._curr = 0
         kw['title'] = 'Select Document to Open'
         jtk.ModalDialog.__init__(self, master, *a, **kw)
+        self._sort_reverse = [False, False]
+        self._preview = 0
 
     def body(self, master):
         frm = tk.LabelFrame(master, text='Search by:')
@@ -535,14 +537,28 @@ class OpenDocDlg(jtk.ModalDialog):
         # --- results ---
         frm = tk.LabelFrame(master, text='Result:')
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
-        self._listbox = tk.Listbox(frm, height=OpenDocDlg.PAGE_NUM, selectmode=tk.MULTIPLE)
-        self._listbox.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
-        self._listbox.bind('<Double-1>', self.preview_)
+        #
+        self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date'],
+                                     show='headings',         # hide first icon column
+                                     height=OpenDocDlg.PAGE_NUM,
+                                     selectmode=tk.EXTENDED)  # multiple rows can be selected
+        self._note_list.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
+        self._note_list.bind('<Double-1>', self.ok)
+        self._note_list.bind('<Enter>', self.preview_schedule_)
+        self._note_list.bind('<Leave>', self.preview_unschedule_)
+        self._note_list.bind('<Motion>', self.preview_schedule_)
+        #
+        self._note_list.column('ID', width=20, minwidth=20)
+        self._note_list.heading('ID', text='ID', command=self.sort_by_id_)
+        self._note_list.heading('Title', text='Title')
+        width = tkFont.Font().measure('1999-99-99')
+        self._note_list.column('Date', width=width, minwidth=width)
+        self._note_list.heading('Date', text='Date', command=self.sort_by_date_)
 
     def apply(self):
         try:
-            selected = self._listbox.curselection()
-            selected = [i + self._curr * OpenDocDlg.PAGE_NUM for i in selected]
+            selected = self._note_list.selection()
+            selected = [int(i) + self._curr * OpenDocDlg.PAGE_NUM for i in selected]
             self.result = [self._notes[i] for i in selected]
         except:
             self.result = None
@@ -569,18 +585,13 @@ class OpenDocDlg(jtk.ModalDialog):
 
     def jump_page_(self, n):
         # update page progress
-        self._listbox.delete(0, tk.END)
+        self._note_list.delete(*self._note_list.get_children(''))
         start = n * OpenDocDlg.PAGE_NUM
         stop = start + OpenDocDlg.PAGE_NUM
-        if len(self._notes) == 0:
-            self._listbox.insert(tk.END, '<Empty>')
-        else:
-            self._listbox.insert(tk.END, *('%s. %s' % (i.sn, i.title) for i in self._notes[start:stop]))
-            #
-            # TODO: it seems 'selection' and 'active' are different thing.
-            self._listbox.select_clear(0, tk.END)
-            self._listbox.activate(0)    # strange thing on Mac: no visual feedback
-            self._listbox.select_set(0)  # now it has visual effect!
+        for i, j in enumerate(self._notes[start:stop]):
+            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date])
+        if len(self._notes) > 0:
+            self._note_list.selection_set('0')
         #
         self._progress.set('%d / %d' % (n+1, self.pages_()))
         self._curr = n
@@ -632,13 +643,34 @@ class OpenDocDlg(jtk.ModalDialog):
         jtk.MessageBubble(self._btn_search, '%d found' % len(self._notes))
         self.jump_page_(0)
 
-    def preview_(self, evt):
-        if len(self._listbox.get(tk.ACTIVE)) == 0:
-            return
-        index = self._listbox.index(tk.ACTIVE)
+    def preview_open_(self, index):
         index += self._curr * OpenDocDlg.PAGE_NUM
-        if index < len(self._notes):
-            NotePreview(self, database=self._store, note=self._notes[index])
+        NotePreview(self, database=self._store, note=self._notes[index])
+
+    def preview_schedule_(self, evt):
+        index = self._note_list.identify_row(evt.y)
+        if index == '':
+            return
+        self.preview_unschedule_()
+        index = int(index)
+        self._preview = self.after(1000, lambda: self.preview_open_(index))
+
+    def preview_unschedule_(self, evt=None):
+        self.after_cancel(self._preview)
+
+    def sort_by_id_(self):
+        self._sort_reverse[0] = not self._sort_reverse[0]
+        self._notes.sort(key=lambda i: i.sn, reverse=self._sort_reverse[0])
+        self.jump_page_(0)
+
+    def sort_by_date_(self):
+        self._sort_reverse[1] = not self._sort_reverse[1]
+        self._notes.sort(key=lambda i: i.date, reverse=self._sort_reverse[1])
+        self.jump_page_(0)
+
+    def ok(self, event=None):
+        self.preview_unschedule_()
+        jtk.ModalDialog.ok(self)
 
 
 class RelyItem:
