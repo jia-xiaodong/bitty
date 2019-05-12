@@ -23,12 +23,27 @@ class TagPicker(tk.Frame):
         def __init__(self, master, selection):
             tk.Menu.__init__(self, master, tearoff=0)
             self.add_command(label="Add Root Node", command=master.add_root_)
+            has_move = (not master._moved_node is None and not master._been_shown)
+            if master._been_shown:
+                master._moved_node = None
+                master._been_shown = False
             if len(selection) > 0:
                 label = master._tree.item(selection, 'text')
                 self.add_command(label="Delete '%s'" % label, command=master.del_node_)
                 self.add_command(label="Add Child", command=master.add_child_)
                 self.add_command(label="Rename...", command=lambda: master.show_rename_entry_(selection))
                 self.add_command(label="Select '%s'" % label, command=master.select_tag_)
+                #
+                # either [1/2] or [2/2]. only display one of these 2 menu items.
+                if master._moved_node is None:
+                    self.add_command(label="[1/2] Move '%s'?" % label,
+                                     command=lambda: master.move_item_start_(selection))
+            #
+            if has_move and master.move_ok_(selection):
+                label = master._tree.item(master._moved_node, 'text')
+                self.add_command(label="[2/2] Place '%s' here?" % label,
+                                 command=lambda: master.move_item_end_(selection))
+                master._been_shown = True
 
     class HiddenNode:
         def __init__(self, parent, iid, index):
@@ -65,6 +80,8 @@ class TagPicker(tk.Frame):
         self._tree.bind('<2>', self.on_popup_menu_)
         self._tree.bind('<Double-1>', self.select_tag_)
         map(lambda i: self.draw_tags_('', i), self._tags)
+        self._moved_node = None  # tag can be moved to another tag as its child
+        self._been_shown = False # show this menu item only once
         #
         # user can select tag from tag-tree and put their text to below list-box.
         tk.Label(master, text='Selected:').pack(side=tk.TOP, anchor=tk.W)
@@ -161,15 +178,11 @@ class TagPicker(tk.Frame):
             self.draw_tags_(iid, i)
 
     def add_root_(self):
-        iid = self._tree.focus()
-        if iid in self._tree.get_children():
-            index = self._tree.index(iid)
-        else:
-            index = tk.END
         tag = jdb.RecordTag(TagPicker.UNNAMED)
         self._store.insert_tag(tag)
         self._tags.append(tag)
-        self._tree.insert('', index, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
+        iid = self._tree.insert('', tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
+        self.show_rename_entry_(iid)
 
     def del_node_(self):
         iid = self._tree.focus()
@@ -188,9 +201,12 @@ class TagPicker(tk.Frame):
         jdb.RecordTag.forest_add(self._tags, tag)
         self._store.insert_tag(tag)
         selected_tag.add_child(tag)
-        self._tree.insert(iid, tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
+        child = self._tree.insert(iid, tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
+        self.show_rename_entry_(child)
 
     def show_rename_entry_(self, iid):
+        self._tree.see(iid)
+        self._tree.focus(iid)
         x, y, w, h = self._tree.bbox(iid)
         self._naming.set(self._tree.item(iid, 'text'))
         self._entry.place(x=x, y=y, width=w, height=h)
@@ -222,6 +238,39 @@ class TagPicker(tk.Frame):
 
     def get_selection(self):
         return self._selected
+
+    def move_item_start_(self, target):
+        self._moved_node = target
+        self._been_shown = False
+
+    def move_item_end_(self, parent):
+        # 1. visual effect
+        self._tree.move(self._moved_node, parent, len(self._tree.get_children(parent)))
+        # 2. data structure
+        moved = self.tag_from_node_(self._moved_node)
+        jdb.RecordTag.forest_delete(self._tags, moved)
+        if parent == '':
+            moved.parent = 0
+        else:
+            parent = self._tree.item(parent, 'values')
+            moved.parent = int(parent[0])
+        jdb.RecordTag.forest_add(self._tags, moved)
+        # 3. database
+        self._store.update_tag(moved)
+        # 4. misc
+        self._moved_node = None
+
+    def move_ok_(self, parent):
+        if self._tree.parent(self._moved_node) == parent:
+            return False  # not necessary to move, already been here.
+        if parent == '':
+            return True   # node can be moved to root
+        moved = self.tag_from_node_(self._moved_node)
+        static = self._tree.item(parent, 'values')
+        static = int(static[0])
+        if moved.find(static):
+            return False  # node can't be moved to its descendant.
+        return True
 
 
 class DocPropertyDlg(jtk.ModalDialog):

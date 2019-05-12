@@ -39,6 +39,10 @@ class RecordTag(object):
     def parent(self):
         return self._parent
 
+    @parent.setter
+    def parent(self, value):
+        self._parent = value
+
     @property
     def name(self):
         return self._name
@@ -52,9 +56,9 @@ class RecordTag(object):
             self._children.append(tag)
 
     def add_descendant(self, tag):
-        if tag.parent == self:
+        if tag.parent == self.sn:
             self.add_child(tag)
-            return
+            return True
         for i in self._children:
             if i.add_descendant(tag):
                 return True
@@ -115,12 +119,12 @@ class RecordTag(object):
 
     @staticmethod
     def forest_add(tags, tag):
-        if tag.sn == 0:
+        if tag.parent == 0:
             tags.append(tag)
             return True
         for i in tags:
             if i.add_descendant(tag):
-                return
+                return True
         return False
 
 
@@ -401,21 +405,17 @@ class NoteStore:
 
     def load_all_tags(self):
         try:
-            tags = []
-            uprooted = []
             cur = self._con.cursor()
             cur.execute('SELECT * FROM tags')
-            for sn, name, base in cur.fetchall():
-                tag = RecordTag(name, base, sn)
-                if base == 0:  # root node
-                    tags.append(tag)
-                elif not RecordTag.forest_organize(tags, tag):
-                    uprooted.append(tag)
-            for i in uprooted[:]:
-                RecordTag.forest_organize(tags, i)
-                uprooted.remove(i)
-            if len(uprooted) > 0:
-                raise Exception('uprooted tags found!')
+            tags = [RecordTag(n, b, s) for s, n, b in cur.fetchall()]
+            root = 0
+            for tag in tags[:]:
+                if tag.parent == 0:
+                    root += 1
+                elif RecordTag.forest_organize(tags, tag):
+                    tags.remove(tag)
+            if root != len(tags):
+                raise Exception('Error: dangling node: %s found. Program has bugs!' % (len(tags)-root))
             return tags
         except Exception as e:
             print('Error on loading tags: %s' % e)
