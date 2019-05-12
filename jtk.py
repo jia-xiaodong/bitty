@@ -427,8 +427,7 @@ class NotifiedScrollBar(tk.Scrollbar):
 
 
 class LineNumberBar(tk.Canvas):
-    _text_font = None
-    _digit_width = 0
+    DIGIT_WIDTH = 0
 
     def __init__(self, master, text, **kwargs):
         """
@@ -437,7 +436,7 @@ class LineNumberBar(tk.Canvas):
         """
         tk.Canvas.__init__(self, master, **kwargs)
         self._text = text
-        self._range = (-1, -1)
+        self._range = (-1, -1, -1)  # tuple(line_start, line_end, line_pos_y)
         self.binding_keys_()
 
         # text should notify canvas when event is fired
@@ -445,27 +444,26 @@ class LineNumberBar(tk.Canvas):
         self._text.add_listeners(NotifiedText.EVENT_VIEW_CHG, self)
 
         # use a font to measure the width of canvas required to hold digits
-        if self._text_font is None:
+        if LineNumberBar.DIGIT_WIDTH == 0:
             dummy = self.create_text(0, 0, text='0')
-            self._text_font = tkFont.nametofont(self.itemcget(dummy, 'font'))
+            font = tkFont.nametofont(self.itemcget(dummy, 'font'))
             self.delete(dummy)
-            self._digit_width = max(self._text_font.measure(str(i)) for i in range(10))
+            LineNumberBar.DIGIT_WIDTH = max(font.measure(str(i)) for i in range(10))
 
     def redraw_(self):
         positions = []
         idx = self._text.index("@0,0")  # coordinates --> 'line.char'
         start = int(idx.split(".")[0])
-        while True:
-            info = self._text.dlineinfo(idx)
-            if info is None:
-                break
+        info = self._text.dlineinfo(idx)
+        while info is not None:
             positions.append(info[1])
             idx = self._text.index("%s+1line" % idx)
+            info = self._text.dlineinfo(idx)
         end = int(idx.split(".")[0]) - 1
         # if no change, don't redraw
-        if self._range == (start, end):
+        if self._range == (start, end, positions[0]):
             return
-        self._range = (start, end)
+        self._range = (start, end, positions[0])
         self.delete(tk.ALL)
         width = self.resize_width_(end)
         for line_num, y in enumerate(positions, start=end-len(positions)+1):
@@ -485,7 +483,7 @@ class LineNumberBar(tk.Canvas):
         resize canvas width to properly hold digits
         @param line_num: last line number
         """
-        required = self._digit_width * (int(math.log10(line_num))+1)
+        required = LineNumberBar.DIGIT_WIDTH * (int(math.log10(line_num))+1)
         if required != int(self.cget('width')):
             self.configure(width=required)
         return self.winfo_reqwidth()

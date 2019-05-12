@@ -364,10 +364,11 @@ class NoteStore:
             elif i == NoteCols.date:
                 args['dat'] = record.date
                 cols.append('date=:dat')
-        sql = 'UPDATE notes SET %s WHERE id=%d' % (', '.join(cols), record.sn)
         try:
-            self._con.execute(sql, args)
-            self._con.commit()
+            if len(cols) > 0:
+                sql = 'UPDATE notes SET %s WHERE id=%d' % (', '.join(cols), record.sn)
+                self._con.execute(sql, args)
+                self._con.commit()
         except Exception as e:
             print('Error on update: %s' % e)
         finally:

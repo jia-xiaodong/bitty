@@ -870,6 +870,30 @@ class MainApp(tk.Tk):
         jtk.CreateToolTip(btn, 'Format: Underline')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
+        n += 1
+        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_mark_list_)
+        btn.image = ico
+        btn.pack(side=tk.LEFT)
+        jtk.CreateToolTip(btn, 'Format: List')
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
+        #
+        n += 1
+        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_make_superscript_)
+        btn.image = ico
+        btn.pack(side=tk.LEFT)
+        jtk.CreateToolTip(btn, 'Format: Superscript')
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
+        #
+        n += 1
+        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_make_subscript_)
+        btn.image = ico
+        btn.pack(side=tk.LEFT)
+        jtk.CreateToolTip(btn, 'Format: Subscript')
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
+        #
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
         #
         n += 1
@@ -1210,23 +1234,70 @@ At the age of 40.
             self.unbind('<Command-F>')
 
     def edit_underline_(self):
+        self.toggle_format_('underline')
+
+    def edit_mark_list_(self):
+        TAG = 'list'
         try:
             editor = self._editor.active()
             core = editor.core()
-            full_included = False
-            it = iter(core.tag_ranges('underline'))
-            for start in it:
-                end = it.next()
-                if core.compare(start, '<=', tk.SEL_FIRST) and core.compare(end, '>=', tk.SEL_LAST):
-                    full_included = True
+            # 1. check if current line is list.
+            sel_range = core.tag_ranges(tk.SEL)
+            if len(sel_range) == 0:
+                sel_range = (tk.INSERT, tk.INSERT)
+            idx_head1 = core.index('%s linestart' % sel_range[0])
+            idx_last1 = core.index('%s lineend+1c' % sel_range[1])  # '+1c' for '\n'
+            it = iter(core.tag_ranges(TAG))
+            fully_included = False
+            for s in it:
+                e = it.next()
+                idx_head2 = core.index('%s linestart' % s)
+                idx_last2 = core.index('%s lineend+1c' % e)
+                if core.compare(idx_head2, '<=', idx_head1) and core.compare(idx_last2, '>=', idx_last1):
+                    fully_included = True
                     break
-            if full_included:
-                core.tag_remove('underline', tk.SEL_FIRST, tk.SEL_LAST)
+            # 2. If so, deactivate it to normal text. If not, make it so.
+            if fully_included:
+                core.tag_remove(TAG, idx_head1, idx_last1)
             else:
-                core.tag_add('underline', tk.SEL_FIRST, tk.SEL_LAST)
+                core.tag_add(TAG, idx_head1, idx_last1)
+            # 3. need saving
             editor.on_modified()
-        except:
-            pass
+        except Exception as e:
+            print('Error: %s' % e)
+
+    def edit_make_superscript_(self):
+        self.toggle_format_('sup', 'sub')
+
+    def edit_make_subscript_(self):
+        self.toggle_format_('sub', 'sup')
+
+    def toggle_format_(self, tag, conflict=None):
+        try:
+            editor = self._editor.active()
+            core = editor.core()
+            # 1. check
+            sel_range = core.tag_ranges(tk.SEL)
+            if len(sel_range) == 0:
+                sel_range = (core.index(tk.INSERT), core.index('%s+1c' % tk.INSERT))
+            it = iter(core.tag_ranges(tag))
+            fully_included = False
+            for s in it:
+                e = it.next()
+                if core.compare(s, '<=', sel_range[0]) and core.compare(e, '>=', sel_range[1]):
+                    fully_included = True
+                    break
+            # 2. If so, deactivate it to normal text. If not, make it so.
+            if fully_included:
+                core.tag_remove(tag, *sel_range)
+            else:
+                if conflict is not None:
+                    core.tag_remove(conflict, *sel_range)
+                core.tag_add(tag, *sel_range)
+            # 3. need saving
+            editor.on_modified()
+        except Exception as e:
+            print('Error: %s' % e)
 
     def edit_insert_image_(self):
         extensions = tuple(Image.registered_extensions().keys())
@@ -1274,11 +1345,31 @@ At the age of 40.
             underlines = ['%s %s' % (str(s), str(next(it))) for s in it]
             if len(underlines) > 0:
                 root["underline"] = underlines
+            # 3. sum up list
+            it = iter(text.tag_ranges('list'))
+            lists = ['%s %s' % (str(s), str(next(it))) for s in it]
+            if len(lists) > 0:
+                root['list'] = lists
+            # 4. sum up superscription
+            it = iter(text.tag_ranges('sup'))
+            sups = ['%s %s' % (str(s), str(next(it))) for s in it]
+            if len(sups) > 0:
+                root['sup'] = sups
+            # 5. sum up subscription
+            it = iter(text.tag_ranges('sub'))
+            subs = ['%s %s' % (str(s), str(next(it))) for s in it]
+            if len(subs) > 0:
+                root['sub'] = subs
             idx = '' if len(root) == 0 else json.dumps(root)
             return idx, bulk
 
     def config_core(self, text):
         text.tag_config('underline', underline=1)
+        text.tag_config('list', lmargin1=12, lmargin2=12)  # 12 pixels, for list
+        #
+        height = self._font.metrics("linespace")
+        text.tag_config('sup', offset=height/3)
+        text.tag_config('sub', offset=-height/3)
 
     def load_content_(self, editor, text, spec, bulk):
         core = editor.core()
@@ -1286,22 +1377,36 @@ At the age of 40.
         core.insert(tk.END, text)
         try:
             idx = json.loads(spec)
-            jfp = jex.FilePile(io.BytesIO(bulk))
-            # 2. images
-            for i in idx.pop('image', []):
-                try:
-                    fd = jfp.open(i['name'])
-                    ext = os.path.splitext(i['name'])[1]
-                    image = jtk.ImageBox(core, image=io.BytesIO(fd.read()), scale=i['scale'], ext=ext)
-                    core.window_create(i['pos'], window=image)
-                    fd.close()
-                except Exception as e:
-                    core.insert(i['pos'], '?')
+            images = idx.pop('image', [])
+            if len(images) > 0:
+                jfp = jex.FilePile(io.BytesIO(bulk))
+                # 2. images
+                for i in images:
+                    try:
+                        fd = jfp.open(i['name'])
+                        ext = os.path.splitext(i['name'])[1]
+                        image = jtk.ImageBox(core, image=io.BytesIO(fd.read()), scale=i['scale'], ext=ext)
+                        core.window_create(i['pos'], window=image)
+                        fd.close()
+                    except Exception as e:
+                        core.insert(i['pos'], '?')
+                jfp.close()
             # 3. underline
             for pos in idx.pop('underline', []):
                 pos = pos.split(' ')
                 core.tag_add('underline', *pos)
-            jfp.close()
+            # 4. list
+            for pos in idx.pop('list', []):
+                pos = pos.split(' ')
+                core.tag_add('list', *pos)
+            # 5. superscription
+            for pos in idx.pop('sup', []):
+                pos = pos.split(' ')
+                core.tag_add('sup', *pos)
+            # 6. subscription
+            for pos in idx.pop('sub', []):
+                pos = pos.split(' ')
+                core.tag_add('sub', *pos)
         except RuntimeError:
             print('bulk data cannot be extracted.')
         except Exception as e:
