@@ -511,11 +511,18 @@ class TextOperationSet:
         for i in ['Cut',            # Mod1-x, F2, Ctrl-Lock-X
                   'Copy',           # Mod1-c, F3, Ctrl-Lock-C (while Caps-Lock on, press Ctrl-Sft-c)
                   'Paste',          # Mod1-v, F4, Ctrl-Lock-V
-                  'PasteSelection', # ButtonRelease-2 (mouse right button)
                   'Undo',           # Mod1-z, Ctrl-Lock-Z
-                  'Redo',           # Mod1-y, Ctrl-Lock-Y
-                  'Clear']:         # @TODO: <Key-Clear>
-            self._ops[i] = lambda: self._txt.event_generate('<<%s>>' % i)
+                  'Redo']:           # Mod1-y, Ctrl-Lock-Y
+            # About parameters of lambda expression:
+            # e for event (but not necessary, only placeholder), i for immediate parameter passing
+            self._ops[i] = lambda e=None, i=i: self._txt.event_generate('<<%s>>' % i)
+        #
+        # bind capital key, too
+        self._txt.bind('<Mod1-X>', self._ops['Cut'])
+        self._txt.bind('<Mod1-C>', self._ops['Copy'])
+        self._txt.bind('<Mod1-V>', self._ops['Paste'])
+        self._txt.bind('<Mod1-Z>', self._ops['Undo'])
+        self._txt.bind('<Mod1-Y>', self._ops['Redo'])
 
     def default_ops_(self):
         """
@@ -584,32 +591,32 @@ class TextOperationSet:
         self._txt.see(end)                  # scroll to line end
         return 'break'                        # avoid the extra 'key handler'
 
-    def next_line(self):
+    def next_line(self, evt=None):
         self._txt.mark_set(tk.INSERT, tk.INSERT + ' +1line')
 
-    def prev_line(self):
+    def prev_line(self, evt=None):
         self._txt.mark_set(tk.INSERT, tk.INSERT + ' -1line')
 
-    def next_char(self):
+    def next_char(self, evt=None):
         self._txt.mark_set(tk.INSERT, tk.INSERT + ' +1c')
 
-    def prev_char(self):
+    def prev_char(self, evt=None):
         self._txt.mark_set(tk.INSERT, tk.INSERT + ' -1c')
 
-    def flip_adj_chars(self):
+    def flip_adj_chars(self, evt=None):
         pass
 
-    def open_new_line(self):
-        pass
+    def open_new_line(self, evt=None):
+        self._txt.insert('%s lineend' % tk.INSERT, '\n')
 
-    def del_to_line_end(self):
-        pass
+    def del_to_line_end(self, evt=None):
+        self._txt.delete(tk.INSERT, '%s lineend' % tk.INSERT)
 
-    def del_next_char(self):
-        pass
+    def del_next_char(self, evt=None):
+        self._txt.delete(tk.INSERT)
 
-    def del_prev_char(self):
-        pass
+    def del_prev_char(self, evt=None):
+        self._txt.delete('%s-1c' % tk.INSERT)
 
     def select_all(self, evt=None):
         self._txt.tag_add(tk.SEL, '1.0', tk.END)
@@ -708,8 +715,8 @@ class TextEditor(tk.Frame):
         content = [i.rstrip(' ') for i in content]
         return '\n'.join(content)
 
-    def operations(self):
-        return self._ops
+    def operation(self, index):
+        return self._ops[index]
 
 
 class TabBox(tk.Frame):

@@ -508,7 +508,6 @@ class NotePreview:
     def __init__(self, master, database, note):
         self._top = top = tk.Toplevel(master, bd=1)
         top.transient(master)          # floating above master always
-        top.wm_overrideredirect(True)  # remove window title bar
         #
         tk.Label(top, text='Title: %s' % note.title).pack(side=tk.TOP, anchor=tk.W)
         #
@@ -538,7 +537,11 @@ class NotePreview:
 
     def close_(self, evt):
         w, h = self._top.winfo_width(), self._top.winfo_height()
-        in_zone = all([0 < evt.x < w, 0 < evt.y < h])
+        rx, ry = self._top.winfo_rootx(), self._top.winfo_rooty()
+        x, y = self._top.winfo_pointerxy()
+        #
+        # tuple(x-rx, y-ry) is the coordinates in this top-level
+        in_zone = all([0 < x-rx < w, 0 < y-ry < h])
         # only if the mouse enters once then leaves, the preview closes.
         if not self._been_entered:
             if in_zone:
@@ -560,7 +563,6 @@ class OpenDocDlg(jtk.ModalDialog):
         kw['title'] = 'Select Document to Open'
         jtk.ModalDialog.__init__(self, master, *a, **kw)
         self._sort_reverse = [False, False]
-        self._preview = 0
 
     def body(self, master):
         frm = tk.LabelFrame(master, text='Search by:')
@@ -588,14 +590,16 @@ class OpenDocDlg(jtk.ModalDialog):
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         #
         self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date'],
-                                     show='headings',         # hide first icon column
-                                     height=OpenDocDlg.PAGE_NUM,
-                                     selectmode=tk.EXTENDED)  # multiple rows can be selected
+                                       show='headings',         # hide first icon column
+                                       height=OpenDocDlg.PAGE_NUM,
+                                       selectmode=tk.EXTENDED)  # multiple rows can be selected
         self._note_list.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
         self._note_list.bind('<Double-1>', self.ok)
-        self._note_list.bind('<Enter>', self.preview_schedule_)
-        self._note_list.bind('<Leave>', self.preview_unschedule_)
-        self._note_list.bind('<Motion>', self.preview_schedule_)
+        self._note_list.bind('<space>', self.open_preview_)
+        self._note_list.bind('<2>', self.open_preview_)
+        # <Up> and <Down> is the default key bindings for Treeview
+        self._note_list.bind('<Left>', self.jump_prev_)
+        self._note_list.bind('<Right>', self.jump_next_)
         #
         self._note_list.column('ID', width=20, minwidth=20)
         self._note_list.heading('ID', text='ID', command=self.sort_by_id_)
@@ -640,16 +644,18 @@ class OpenDocDlg(jtk.ModalDialog):
         for i, j in enumerate(self._notes[start:stop]):
             self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date])
         if len(self._notes) > 0:
-            self._note_list.selection_set('0')
+            self._note_list.selection_set('0')  # automatically select the 1st one
+            self._note_list.focus('0')          # give the 1st one focus (visually)
+            self._note_list.focus_set()         # widget get focus to accept '<space>', '<Up>', '<Down>'
         #
         self._progress.set('%d / %d' % (n+1, self.pages_()))
         self._curr = n
 
-    def jump_next_(self):
+    def jump_next_(self, evt=None):
         if self._curr+1 < self.pages_():
             self.jump_page_(self._curr+1)
 
-    def jump_prev_(self):
+    def jump_prev_(self, evt=None):
         if self._curr > 0:
             self.jump_page_(self._curr-1)
 
@@ -692,20 +698,16 @@ class OpenDocDlg(jtk.ModalDialog):
         jtk.MessageBubble(self._btn_search, '%d found' % len(self._notes))
         self.jump_page_(0)
 
-    def preview_open_(self, index):
+    def open_preview_(self, evt=None):
+        if evt.type == '2':  # TODO: 2 for key?
+            active = self._note_list.focus()
+        else:                # TODO: 4 for mouse?
+            active = self._note_list.identify_row(evt.y)
+        if active == '':
+            return
+        index = self._note_list.index(active)
         index += self._curr * OpenDocDlg.PAGE_NUM
         NotePreview(self, database=self._store, note=self._notes[index])
-
-    def preview_schedule_(self, evt):
-        index = self._note_list.identify_row(evt.y)
-        if index == '':
-            return
-        self.preview_unschedule_()
-        index = int(index)
-        self._preview = self.after(1000, lambda: self.preview_open_(index))
-
-    def preview_unschedule_(self, evt=None):
-        self.after_cancel(self._preview)
 
     def sort_by_id_(self):
         self._sort_reverse[0] = not self._sort_reverse[0]
@@ -717,9 +719,49 @@ class OpenDocDlg(jtk.ModalDialog):
         self._notes.sort(key=lambda i: i.date, reverse=self._sort_reverse[1])
         self.jump_page_(0)
 
-    def ok(self, event=None):
-        self.preview_unschedule_()
-        jtk.ModalDialog.ok(self)
+
+class EntryOps:
+    @staticmethod
+    def select_all(evt):
+        w = evt.widget
+        if not isinstance(w, tk.Entry):
+            return
+        w.select_range(0, tk.END)
+
+    @staticmethod
+    def jump_to_start(evt):
+        w = evt.widget
+        if not isinstance(w, tk.Entry):
+            return
+        w.icursor(0)
+
+    @staticmethod
+    def jump_to_end(evt):
+        w = evt.widget
+        if not isinstance(w, tk.Entry):
+            return
+        w.icursor(tk.END)
+
+    @staticmethod
+    def copy(evt):
+        w = evt.widget
+        if not isinstance(w, tk.Entry):
+            return
+        w.event_generate('<<Copy>>')
+
+    @staticmethod
+    def cut(evt):
+        w = evt.widget
+        if not isinstance(w, tk.Entry):
+            return
+        w.event_generate('<<Cut>>')
+
+    @staticmethod
+    def paste(evt):
+        w = evt.widget
+        if not isinstance(w, tk.Entry):
+            return
+        w.event_generate('<<Paste>>')
 
 
 class RelyItem:
@@ -840,26 +882,10 @@ class MainApp(tk.Tk):
         #
         n += 1
         ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
-        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_edit_cut_)
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_insert_image_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
-        jtk.CreateToolTip(btn, 'Cut <Command-X>')
-        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
-        #
-        n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
-        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_edit_copy_)
-        btn.image = ico
-        btn.pack(side=tk.LEFT)
-        jtk.CreateToolTip(btn, 'Copy <Command-C>')
-        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
-        #
-        n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
-        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_edit_paste_)
-        btn.image = ico
-        btn.pack(side=tk.LEFT)
-        jtk.CreateToolTip(btn, 'Paste <Command-V>')
+        jtk.CreateToolTip(btn, 'Insert Image File')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
@@ -1126,6 +1152,15 @@ At the age of 40.
         # lock several widgets until you open a database.
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
+        #
+        # enhance tk.Entry with more hot keys
+        self.bind_class('Entry', '<Mod1-a>', EntryOps.select_all)
+        self.bind_class('Entry', '<Mod1-A>', EntryOps.select_all)
+        self.bind_class('Entry', '<Mod1-Left>', EntryOps.jump_to_start)
+        self.bind_class('Entry', '<Mod1-Right>', EntryOps.jump_to_end)
+        self.bind_class('Entry', '<Mod1-C>', EntryOps.copy)
+        self.bind_class('Entry', '<Mod1-X>', EntryOps.cut)
+        self.bind_class('Entry', '<Mod1-V>', EntryOps.paste)
 
     def menu_doc_attr_(self):
         editor = self._editor.active()
@@ -1155,18 +1190,6 @@ At the age of 40.
             if parts[2].isdigit():  # option 2: 'untitled-2'
                 return True
         return False
-
-    def menu_edit_cut_(self):
-        editor = self._editor.active()
-        editor.operations()["Cut"]()
-
-    def menu_edit_copy_(self):
-        editor = self._editor.active()
-        editor.operations()["Copy"]()
-
-    def menu_edit_paste_(self):
-        editor = self._editor.active()
-        editor.operations()["Paste"]()
 
     def menu_edit_find_(self, evt=None):
         editor = self._editor.active()
