@@ -304,6 +304,7 @@ class DocPropertyDlg(jtk.ModalDialog):
         #
         self._tag_picker = TagPicker(master, database=self._store, owned=self._record.tags[:])
         self._tag_picker.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        return self._e  # make it getting input focus
 
     def apply(self):
         self._record.title = self._title.get().strip(' \n')
@@ -508,6 +509,7 @@ class NotePreview:
     def __init__(self, master, database, note):
         self._top = top = tk.Toplevel(master, bd=1)
         top.transient(master)          # floating above master always
+        top.wm_overrideredirect(True)  # remove window title bar
         #
         tk.Label(top, text='Title: %s' % note.title).pack(side=tk.TOP, anchor=tk.W)
         #
@@ -536,12 +538,10 @@ class NotePreview:
         self._been_entered = False
 
     def close_(self, evt):
+        x, y = self._top.winfo_rootx(), self._top.winfo_rooty()
+        position = (evt.x_root - x, evt.y_root - y)  # in top-level coordinate space
         w, h = self._top.winfo_width(), self._top.winfo_height()
-        rx, ry = self._top.winfo_rootx(), self._top.winfo_rooty()
-        x, y = self._top.winfo_pointerxy()
-        #
-        # tuple(x-rx, y-ry) is the coordinates in this top-level
-        in_zone = all([0 < x-rx < w, 0 < y-ry < h])
+        in_zone = all([0 < position[0] < w, 0 < position[1] < h])
         # only if the mouse enters once then leaves, the preview closes.
         if not self._been_entered:
             if in_zone:
@@ -831,6 +831,8 @@ class MainApp(tk.Tk):
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='Insert Image', command=self.edit_insert_image_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 0)
+        menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 1)
         menu_bar.add_cascade(label='Edit', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 2)
         # help
@@ -1248,13 +1250,15 @@ At the age of 40.
         map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DOC_EXIST])
         #
         if evt.state:
-            self.bind('<Command-s>', self.menu_doc_save_)
-            self.bind('<Command-f>', self.menu_edit_find_)
-            self.bind('<Command-F>', self.menu_edit_find_)
+            self.bind('<Mod1-s>', self.menu_doc_save_)
+            self.bind('<Mod1-S>', self.menu_doc_save_)
+            self.bind('<Mod1-f>', self.menu_edit_find_)
+            self.bind('<Mod1-F>', self.menu_edit_find_)
         else:
-            self.unbind('<Command-s>')
-            self.unbind('<Command-f>')
-            self.unbind('<Command-F>')
+            self.unbind('<Mod1-s>')
+            self.unbind('<Mod1-S>')
+            self.unbind('<Mod1-f>')
+            self.unbind('<Mod1-F>')
 
     def edit_underline_(self):
         self.toggle_format_('underline')
@@ -1328,7 +1332,7 @@ At the age of 40.
         if filename is '':
             return
         editor = self._editor.active()
-        image = jtk.ImageBox(editor, image=open(filename), ext=os.path.splitext(filename)[1])
+        image = jtk.ImageBox(editor.core(), image=open(filename), ext=os.path.splitext(filename)[1])
         editor.core().window_create(tk.INSERT, window=image)
         editor.on_modified()
 
@@ -1435,6 +1439,13 @@ At the age of 40.
         except Exception as e:
             pass  #print('Error: %s' % e)
         editor.monitor_change()
+
+    def copy_from_clipboard_(self):
+        editor = self._editor.active()
+        content = editor.clipboard_get()
+        content = content.split('\r')
+        content = '\n'.join(content)
+        editor.core().insert(tk.END, content)
 
 
 def main():

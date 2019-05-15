@@ -1252,6 +1252,7 @@ class ImageBox(tk.Canvas):
         self.bind('<Map>', self.display_)
         self.bind('<Enter>', self.hud_on_)
         self.bind('<Leave>', self.hud_off_)
+        self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
         # For GIF
         self._gif_task = 0
         self._gif_buff = None
@@ -1340,6 +1341,16 @@ class ImageBox(tk.Canvas):
     def get_data(self):
         self._bak.seek(0)
         return self._bak.read(), self._scale.get(), self._ext
+
+    def on_scroll_(self, evt):
+        """
+        @note:
+          delta is the scrolling distance
+          state is direction: horizontal(1) or vertical(0)
+          On Mac, tk.Text supports vertical and horizontal scroll by itself.
+          Therefore, it's enough for tk.Canvas to only pass event info.
+        """
+        self.master.event_generate('<MouseWheel>', delta=evt.delta, state=evt.state)
 
 
 def unit_test_calendar():
