@@ -783,7 +783,7 @@ class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
     #
-    SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2)
+    SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2, FailSpecs=3)
     # All text editors are using same font
     DEFAULT_FONT = 'Helvetica' if platform == 'darwin' else 'Courier'
     DEFAULT_SIZE = 18
@@ -829,10 +829,12 @@ class MainApp(tk.Tk):
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 1)
         # edit
         menu = tk.Menu(menu_bar, tearoff=0)
-        menu.add_command(label='Insert Image', command=self.edit_insert_image_)
+        menu.add_command(label='Insert Image File', command=self.edit_insert_image_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 0)
-        menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
+        menu.add_command(label='Insert Text Table', command=self.edit_insert_table_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 1)
+        menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 2)
         menu_bar.add_cascade(label='Edit', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 2)
         # help
@@ -888,6 +890,14 @@ class MainApp(tk.Tk):
         btn.image = ico
         btn.pack(side=tk.LEFT)
         jtk.CreateToolTip(btn, 'Insert Image File')
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
+        #
+        n += 1
+        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_insert_table_)
+        btn.image = ico
+        btn.pack(side=tk.LEFT)
+        jtk.CreateToolTip(btn, 'Insert Text Table')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
@@ -1010,10 +1020,7 @@ class MainApp(tk.Tk):
             return True
         for e in self._editor.iter_tabs():
             if e.modified():
-                result = self.save_(e)
-                # if content exists, reject to continue until a title is given.
-                if result == MainApp.SAVE.FailTitle:
-                    return False
+                self.save_(e)
         self._editor.close_all()
         self._notes.clear()
         self._store.close()
@@ -1070,14 +1077,7 @@ class MainApp(tk.Tk):
         self.save_(editor)
 
     def save_(self, editor):
-        """
-        @return saving result (enum)
-        """
-        content = editor.content()
-        # Saving Requirements No.1: non-empty content
-        if content == '':
-            return MainApp.SAVE.FailContent
-        #
+        errors = set()
         try:
             record = self._notes[editor]
         except KeyError:
@@ -1088,16 +1088,23 @@ class MainApp(tk.Tk):
         if MainApp.unnamed(record.title) or len(record.tags) == 0:
             dlg = DocPropertyDlg(self, database=self._store, record=record)
             dlg.show()
-            if dlg.result is None:
-                return MainApp.SAVE.FailTitle
-            # Saving Requirements No.2: a proper title
             if MainApp.unnamed(record.title):
-                return MainApp.SAVE.FailTitle
-            self._editor.set_caption(editor, record.title)
+                errors.add(MainApp.SAVE.FailTitle)
+            if MainApp.SAVE.FailTitle not in errors:
+                self._editor.set_caption(editor, record.title)
         #
         # format-related misc
         record.format, record.bulk = self.collect_misc_(editor.core())
+        if len(record.format) == 0:
+            errors.add(MainApp.SAVE.FailSpecs)
         #
+        content = self.get_text(editor)
+        if content == '':
+            errors.add(MainApp.SAVE.FailContent)
+        #
+        # if no content, no format, we discard it.
+        if MainApp.SAVE.FailContent in errors and MainApp.SAVE.FailSpecs in errors:
+            return errors
         # save to database
         record.script = content
         if record.fragile:
@@ -1106,21 +1113,17 @@ class MainApp(tk.Tk):
         else:
             self._store.update_note(record)
         editor.on_saved()
-        return MainApp.SAVE.Finish
+        errors.add(MainApp.SAVE.Finish)
+        return errors
 
     def menu_doc_close_(self):
-        result = MainApp.SAVE.Finish
         editor = self._editor.active()
         if editor.modified():
-            result = self.save_(editor)
-            # refuse to close if it has content but no title
-            if result == MainApp.SAVE.FailTitle:
-                return result
+            self.save_(editor)
         self._editor.remove(editor)
         self._notes.pop(editor, None)
         if self._editor.active() is None:
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
-        return result
 
     def menu_doc_delete_(self):
         editor = self._editor.active()
@@ -1336,6 +1339,14 @@ At the age of 40.
         editor.core().window_create(tk.INSERT, window=image)
         editor.on_modified()
 
+    def edit_insert_table_(self):
+        ts = self.clipboard_get()
+        table = json.loads(ts)
+        editor = self._editor.active()
+        table = jtk.TextTableBox(editor.core(), table=table, font=self._font)
+        editor.core().window_create(tk.INSERT, window=table)
+        editor.on_modified()
+
     def doc_export_html_(self):
         pass
 
@@ -1344,51 +1355,56 @@ At the age of 40.
         @return tuple(json, bytes). Either could be '' (empty str).
         """
         windows = text.window_names()
-        try:
+        if len(windows) > 0 and isinstance(windows[0], basestring):
             windows = map(text.nametowidget, windows)
-        except tk.TclError:
-            pass
-        finally:
-            # 1. sum up all images
-            buf = io.BytesIO()
-            jfp = jex.FilePile(buf, 'w')
             windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
-            images = []
-            for i, w in enumerate(windows):
-                pos = text.index(w)
-                data, scale, ext = w.get_data()
-                image_name = '%s%s' % (i, ext)
-                jfp.append(image_name, data)
-                images.append(dict(name=image_name, pos=pos, scale=scale))
-            jfp.close()
-            root = {}
-            if len(images) > 0:
-                root["image"] = images
-                bulk = buf.getvalue()
-            else:
-                bulk = ''
-            # 2. sum up all underlines
-            it = iter(text.tag_ranges('underline'))
-            underlines = ['%s %s' % (str(s), str(next(it))) for s in it]
-            if len(underlines) > 0:
-                root["underline"] = underlines
-            # 3. sum up list
-            it = iter(text.tag_ranges('list'))
-            lists = ['%s %s' % (str(s), str(next(it))) for s in it]
-            if len(lists) > 0:
-                root['list'] = lists
-            # 4. sum up superscription
-            it = iter(text.tag_ranges('sup'))
-            sups = ['%s %s' % (str(s), str(next(it))) for s in it]
-            if len(sups) > 0:
-                root['sup'] = sups
-            # 5. sum up subscription
-            it = iter(text.tag_ranges('sub'))
-            subs = ['%s %s' % (str(s), str(next(it))) for s in it]
-            if len(subs) > 0:
-                root['sub'] = subs
-            idx = '' if len(root) == 0 else json.dumps(root)
-            return idx, bulk
+        # 1. sum up all images
+        buf = io.BytesIO()
+        jfp = jex.FilePile(buf, 'w')
+        images = []
+        for i, w in enumerate([w for w in windows if isinstance(w, jtk.ImageBox)]):
+            pos = text.index(w)
+            data, scale, ext = w.get_data()
+            image_name = '%s%s' % (i, ext)
+            jfp.append(image_name, data)
+            images.append(dict(name=image_name, pos=pos, scale=scale))
+        jfp.close()
+        root = {}
+        if len(images) > 0:
+            root["image"] = images
+            bulk = buf.getvalue()
+        else:
+            bulk = ''
+        # 2. sum up all underlines
+        it = iter(text.tag_ranges('underline'))
+        underlines = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(underlines) > 0:
+            root["underline"] = underlines
+        # 3. sum up list
+        it = iter(text.tag_ranges('list'))
+        lists = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(lists) > 0:
+            root['list'] = lists
+        # 4. sum up superscription
+        it = iter(text.tag_ranges('sup'))
+        sups = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(sups) > 0:
+            root['sup'] = sups
+        # 5. sum up subscription
+        it = iter(text.tag_ranges('sub'))
+        subs = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(subs) > 0:
+            root['sub'] = subs
+        # 6. tables
+        tables = []
+        for w in [w for w in windows if isinstance(w, jtk.TextTableBox)]:
+            data, lines = w.dump()
+            row, col = text.index(w).split('.')
+            tables.append(dict(row=int(row)-1, col=int(col), end=len(lines[-1]), data=data, num=len(lines)))
+        if len(tables) > 0:
+            root['table'] = tables
+        idx = '' if len(root) == 0 else json.dumps(root)
+        return idx, bulk
 
     def config_core(self, text):
         text.tag_config('underline', underline=1)
@@ -1400,14 +1416,43 @@ At the age of 40.
 
     def load_content_(self, editor, text, spec, bulk):
         core = editor.core()
-        # 1. plain text
-        core.insert(tk.END, text)
+        if len(spec) == 0:
+            core.insert(tk.END, text)
+            return
+        #
         try:
             idx = json.loads(spec)
+            # 1. table
+            tables = idx.pop('table', [])
+            table_windows = []
+            if len(tables) > 0:
+                text = text.split('\n')
+                for i in tables:
+                    row = i['row']
+                    col = i['col']
+                    end = i['end']
+                    num = i['num']
+                    table_lines = []
+                    table_lines.append(text[row][col:])
+                    table_lines.extend(text[row+1:row+num-1])
+                    table_lines.append(text[row+num-1][0:end])
+                    specs = jtk.TextTableBox.set_spec_text(i['data'], table_lines)
+                    table = jtk.TextTableBox(core, table=specs, font=self._font)
+                    table_windows.append((table, '%d.%d' % (row+1, col)))
+                    # delete table text from content
+                    # question mark is a placeholder
+                    text[row] = '%s?%s' % (text[row][:col], text[row+num-1][end:])
+                    del text[row+1:row+num]
+                text = '\n'.join(text)
+            # 2. plain text
+            core.insert(tk.END, text)
+            for t, p in table_windows:
+                core.delete(p)
+                core.window_create(p, window=t)
+            # 3. images
             images = idx.pop('image', [])
             if len(images) > 0:
                 jfp = jex.FilePile(io.BytesIO(bulk))
-                # 2. images
                 for i in images:
                     try:
                         fd = jfp.open(i['name'])
@@ -1416,28 +1461,28 @@ At the age of 40.
                         core.window_create(i['pos'], window=image)
                         fd.close()
                     except Exception as e:
-                        core.insert(i['pos'], '?')
+                        core.insert(i['pos'], '?')  # a placeholder
                 jfp.close()
-            # 3. underline
+            # 4. underline
             for pos in idx.pop('underline', []):
                 pos = pos.split(' ')
                 core.tag_add('underline', *pos)
-            # 4. list
+            # 5. list
             for pos in idx.pop('list', []):
                 pos = pos.split(' ')
                 core.tag_add('list', *pos)
-            # 5. superscription
+            # 6. superscription
             for pos in idx.pop('sup', []):
                 pos = pos.split(' ')
                 core.tag_add('sup', *pos)
-            # 6. subscription
+            # 7. subscription
             for pos in idx.pop('sub', []):
                 pos = pos.split(' ')
                 core.tag_add('sub', *pos)
         except RuntimeError:
             print('bulk data cannot be extracted.')
         except Exception as e:
-            pass  #print('Error: %s' % e)
+            print('Error: %s' % e)
         editor.monitor_change()
 
     def copy_from_clipboard_(self):
@@ -1445,17 +1490,34 @@ At the age of 40.
         content = editor.clipboard_get()
         content = content.split('\r')
         content = '\n'.join(content)
-        editor.core().insert(tk.END, content)
+        editor.core().insert(tk.INSERT, content)
+        editor.core().see(tk.INSERT)
+
+    def get_text(self, editor):
+        text = editor.core()
+        content = text.get('1.0', tk.END+'-1c').split('\n')
+        # delete redundant space (line-end)
+        content = [i.rstrip(' ') for i in content]
+        #
+        # extract table text, put it to content,
+        # so that it can be searched, too.
+        windows = text.window_names()
+        if len(windows) > 0:
+            if isinstance(windows[0], basestring):
+                windows = map(text.nametowidget, windows)
+            windows = [w for w in windows if isinstance(w, jtk.TextTableBox)]
+            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1, reverse=True)
+            for w in windows:
+                _, lines = w.dump()
+                line, col = text.index(w).split('.')
+                line = int(line) - 1
+                col = int(col)
+                content[line] = '%s%s%s' % (content[line][:col], '\n'.join(lines), content[line][col:])
+        return '\n'.join(content)
 
 
 def main():
     MainApp().mainloop()
-
-
-def make_toolbar_gray():
-    im = Image.open('toolbar.jpg').convert('L')
-    im.save('toolbar.jpg', 'JPEG', bits=8)
-
 
 if __name__ == "__main__":
     main()

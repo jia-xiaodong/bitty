@@ -709,12 +709,6 @@ class TextEditor(tk.Frame):
         self._txt.add_listeners(NotifiedText.EVENT_MODIFIED, self)
         self.bind(NotifiedText.EVENT_MODIFIED, self.on_modified, True)
 
-    def content(self):
-        content = self._txt.get('1.0', tk.END+'-1c').split('\n')
-        # delete redundant space (line-end)
-        content = [i.rstrip(' ') for i in content]
-        return '\n'.join(content)
-
     def operation(self, index):
         return self._ops[index]
 
@@ -1231,6 +1225,8 @@ class SearchBar(tk.Frame):
 
 
 class ImageBox(tk.Canvas):
+    BIAS = 3
+
     def __init__(self, master, *a, **kw):
         """
         keyword arguments:
@@ -1249,7 +1245,6 @@ class ImageBox(tk.Canvas):
         self._scb = None  # trace-variable callback 'scale'
         tk.Canvas.__init__(self, master, *a, **kw)
         #
-        self.bind('<Map>', self.display_)
         self.bind('<Enter>', self.hud_on_)
         self.bind('<Leave>', self.hud_off_)
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
@@ -1264,14 +1259,21 @@ class ImageBox(tk.Canvas):
             self._gif_dura = min(self._src.info['duration'], 200)
             self.bind('<1>', self.toggle_)
         #
-        hud = tk.Frame(self)
-        hud.pack()
-        tk.Label(hud, textvariable=self._info).pack(side=tk.TOP)
-        frm = tk.Frame(hud)
-        frm.pack(side=tk.TOP)
-        tk.Scale(frm, orient=tk.HORIZONTAL, variable=self._scale, from_=1).pack(side=tk.LEFT)
-        tk.Button(frm, text='Export', command=self.dump).pack(side=tk.LEFT)
-        self._hud = self.create_window(3, 3, anchor=tk.NW, window=hud, state=tk.HIDDEN)
+        self._hudw = tk.Frame(self, bd=1, relief=tk.RAISED)
+        self._hudw.pack()
+        row1 = tk.Frame(self._hudw)
+        row1.pack(side=tk.TOP, anchor=tk.W)
+        tk.Label(row1, textvariable=self._info).pack(side=tk.LEFT)
+        if self.is_gif():
+            self._loop = tk.IntVar(value=self._src.info.get('loop', 0))
+            tk.Checkbutton(row1, text='loop', variable=self._loop).pack(side=tk.LEFT)
+        row2 = tk.Frame(self._hudw)
+        row2.pack(side=tk.TOP)
+        tk.Scale(row2, orient=tk.HORIZONTAL, variable=self._scale, from_=1).pack(side=tk.LEFT)
+        tk.Button(row2, text='Export', command=self.dump).pack(side=tk.LEFT, anchor=tk.S)
+        self._hud = self.create_window(ImageBox.BIAS, ImageBox.BIAS, anchor=tk.NW, window=self._hudw, state=tk.HIDDEN)
+        #
+        self.display_()
 
     def is_gif(self):
         return self._gif_curr > -1
@@ -1294,32 +1296,36 @@ class ImageBox(tk.Canvas):
     def display_(self, evt=None):
         scale = self._scale.get()
         new_w, new_h = self._src.width*scale/100, self._src.height*scale/100
-        #
-        if self._dst is None or self._dst.width() != new_w:
+        # resize canvas to accommodate image
+        if self._dst is None:
             self.config(width=new_w, height=new_h)
-        #
+        elif self._dst.width() != new_w:
+            # impose a restriction upon canvas to avoid it's too small.
+            canvas_w = max(new_w, self._hudw.winfo_width())
+            if self.winfo_width() != canvas_w+ImageBox.BIAS*2:
+                canvas_h = int(self._src.height * canvas_w / self._src.width)
+                self.config(width=canvas_w, height=canvas_h)
+        # display image properties
+        ifo = [self._src.format, '%dx%d' % (self._src.width, self._src.height)]
+        if self.is_gif():
+            ifo.append('%d/%d' % (self._gif_curr+1, self._src.n_frames))
+        self._info.set(', '.join(ifo))
+        # display image and schedule next frame if loop is on
         if self.is_gif():
             src = self._gif_buff[self._gif_curr]
             if self._gif_task > 0:
-                self._gif_curr += 1
-                if self._gif_curr < self._src.n_frames:
-                    self._gif_task = self.after(self._gif_dura, self.display_)
-                else:
+                self._gif_curr = (self._gif_curr+1) % self._src.n_frames
+                if self._gif_curr == 0 and self._loop.get() == 0:
                     self._gif_task = 0
-                    self._gif_curr = 0
+                else:
+                    self._gif_task = self.after(self._gif_dura, self.display_)
         else:
             src = self._src
         self._dst = ImageTk.PhotoImage(image=src.resize((new_w, new_h)))
         if self._iid == 0:
-            # TODO: why start drawing from (3,3)?
-            self._iid = self.create_image(3, 3, anchor=tk.NW, image=self._dst)
+            self._iid = self.create_image(ImageBox.BIAS, ImageBox.BIAS, anchor=tk.NW, image=self._dst)
         else:
             self.itemconfig(self._iid, image=self._dst)
-        #
-        if self.is_gif():
-            self._info.set('GIF, %s, %s/%s' % (self._src.size, self._gif_curr+1, self._src.n_frames))
-        else:
-            self._info.set('%s, %s' % (self._src.format, self._src.size))
 
     def hud_on_(self, evt):
         self.itemconfig(self._hud, state=tk.NORMAL)
@@ -1351,6 +1357,427 @@ class ImageBox(tk.Canvas):
           Therefore, it's enough for tk.Canvas to only pass event info.
         """
         self.master.event_generate('<MouseWheel>', delta=evt.delta, state=evt.state)
+
+
+class TextTableBox(tk.Canvas):
+    HEIGHT = 0
+    PADDING = 0
+    #
+    # It's a magic number.
+    # But canvas paint everything from this coordinate, not zero!
+    # I don't know why. Maybe someone can tell me.
+    BIAS = 3
+
+    class TableCell:
+        def __init__(self, text, rows=1, cols=1, x=0, rid=0):
+            self.text = text
+            self.rows = rows  # vertical span
+            self.cols = cols  # horizontal span
+            self.x = x        # for sort only
+            self.from_ = -1
+            self.to_ = -1
+            self._rect_id = rid
+
+        def set_content_range(self, from_, to_):
+            self.from_ = from_
+            self.to_ = to_
+
+        def to_dict(self):
+            d = {"from": self.from_, "to": self.to_}
+            if self.rows > 1:
+                d["rows"] = self.rows
+            if self.cols > 1:
+                d["cols"] = self.cols
+            return d
+
+        def rid(self):
+            return self._rect_id
+
+        @staticmethod
+        def span(coord1, coord2, configs):
+            """
+            calculate row span and column span.
+            @param: both coord1 and coord2 is the pixel that just resides on rectangle.
+            @param configs: is array of all cells' length (width or height), including only one side of frame.
+            """
+            def cell_index(c):
+                coord = TextTableBox.BIAS
+                idx = 0
+                while c > coord:
+                    coord += configs[idx]
+                    idx += 1
+                return idx
+            idx1 = cell_index(coord1)
+            idx2 = cell_index(coord2)
+            return idx2 - idx1
+
+
+    class Popup(tk.Menu):
+        def __init__(self, master):
+            tk.Menu.__init__(self, master, tearoff=0)
+            #
+            cascade = tk.Menu(self)
+            cascade.add_command(label='up', command=master.add_row_up)
+            cascade.add_command(label='down', command=master.add_row_down)
+            self.add_cascade(label='add row', menu=cascade)
+            #
+            cascade = tk.Menu(self)
+            cascade.add_command(label='left', command=master.add_col_left)
+            cascade.add_command(label='right', command=master.add_col_right)
+            self.add_cascade(label='add column', menu=cascade)
+            #
+            self.add_command(label='delete row', command=master.del_row)
+            self.add_command(label='delete column', command=master.del_col)
+            #
+            cascade = tk.Menu(self)
+            cascade.add_command(label='up', command=master.merge_up)
+            cascade.add_command(label='down', command=master.merge_down)
+            cascade.add_command(label='left', command=master.merge_left)
+            cascade.add_command(label='right', command=master.merge_right)
+            self.add_cascade(label='merge cell', menu=cascade)
+            #
+            cascade = tk.Menu(self)
+            cascade.add_command(label='horizontal', command=master.split_horizontal)
+            cascade.add_command(label='vertical', command=master.split_vertical)
+            self.add_cascade(label='split cell', menu=cascade)
+            #
+            cascade = tk.Menu(self)
+            cascade.add_command(label='row', command=master.header_row)
+            cascade.add_command(label='column', command=master.header_col)
+            self.add_cascade(label='header', menu=cascade)
+
+
+    def __init__(self, master, *a, **kw):
+        """
+        @param table: keyword parameter, looks like below JSON:
+        [[{"text":"abcd\ndef","rows":2},{"text":"gh","cols":2}],[{"text":"hello"},{"text":"world","rows":2}],[{"text":"foobar"},{"text":"great"}]]
+        """
+        table = TextTableBox.spec_to_table(kw.pop('table'))
+        self._font = kw.pop('font')
+        TextTableBox.HEIGHT = self._font.metrics("linespace")
+        TextTableBox.PADDING = TextTableBox.HEIGHT / 4
+        #
+        tk.Canvas.__init__(self, master, *a, **kw)
+        #
+        self.draw_table(table)
+        #
+        self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
+        self.bind('<1>', self.select_)
+        self.bind('<Double-1>', self.edit_)
+        self.bind('<2>', self.on_popup_menu_)
+        self._menu = TextTableBox.Popup(self)
+        #
+        self._selected = None
+        self._edited = tk.Text(self, font=self._font)
+        self._edited.bind('<Return>', self.finish_edit_)
+        self._edited.bind('<Escape>', self.cancel_edit_)
+        self.bind('<Leave>', self.cancel_edit_)
+
+    @staticmethod
+    def spec_to_table(specs):
+        table = []
+        for row in specs:
+            cells = []
+            for col in row:
+                t = col.get('text', '')
+                r = col.get('rows', 1)
+                c = col.get('cols', 1)
+                cells.append(TextTableBox.TableCell(t, r, c))
+            table.append(cells)
+        return table
+
+    @staticmethod
+    def set_spec_text(specs, content):
+        for row in specs:
+            for cell in row:
+                from_ = cell['from']
+                to_ = cell['to']
+                cell['text'] = '\n'.join(content[from_:to_])
+        return specs
+
+    def draw_table(self, table):
+        self.delete(tk.ALL)
+        # 1.
+        col_width = []
+        row_height = []
+        matrix = [[] for i in range(len(table))]
+        for i, row in enumerate(table):
+            j = 0
+            for cell in row:
+                while j < len(matrix[i]) and matrix[i][j] == 1:
+                    j += 1
+                lines = cell.text.split('\n')
+                width = max([self._font.measure(k) for k in lines]) / cell.cols + TextTableBox.PADDING*2
+                height = len(lines) / cell.rows
+                for m in range(i, i+cell.rows):
+                    for n in range(j, j+cell.cols):
+                        old_w = col_width[n] if n < len(col_width) else 0
+                        old_h = row_height[m] if m < len(row_height) else 0
+                        if width > old_w:
+                            if n < len(col_width):
+                                col_width[n] = width
+                            else:
+                                col_width.append(width)
+                        if height > old_h:
+                            if m < len(row_height):
+                                row_height[m] = height
+                            else:
+                                row_height.append(height)
+                        if n >= len(matrix[m]):
+                            matrix[m].extend([0]*(n-len(matrix[m])+1))
+                        matrix[m][n] = 1
+                j += cell.cols
+        # 2.
+        matrix = []
+        for i in range(len(row_height)):
+            row = [0 for j in range(len(col_width))]
+            matrix.append(row)
+        # 3.
+        row_start = TextTableBox.BIAS
+        for i, row in enumerate(table):
+            j = 0
+            col_start = TextTableBox.BIAS
+            for cell in row:
+                # find a unoccupied grid
+                while matrix[i][j] == 1:
+                    col_start += col_width[j]
+                    j += 1
+                bottom = sum([2*TextTableBox.PADDING + m*TextTableBox.HEIGHT for m in row_height[i:i+cell.rows]], row_start)
+                right = sum(col_width[j:j+cell.cols], col_start)
+                #
+                self.create_rectangle(col_start, row_start, right, bottom)
+                x = (col_start + right) / 2
+                y = (row_start + bottom) / 2
+                self.create_text(x, y, anchor=tk.CENTER, text=cell.text, font=self._font)
+                # update matrix
+                for m in range(i, i+cell.rows):
+                    for n in range(j, j+cell.cols):
+                        matrix[m][n] = 1
+                #
+                col_start = right
+                j += cell.cols
+            row_start += 2 * TextTableBox.PADDING + row_height[i] * TextTableBox.HEIGHT
+        # 4. update Canvas size
+        self.config(width=sum(col_width, 3), height=row_start)
+
+    def dump(self):
+        cells = self.dump_table_()
+        content = []
+        formats = []
+        counter = 0
+        for row in cells:
+            row_format = []
+            for cell in row:
+                content.extend(cell.text.split('\n'))
+                # from_, to_ are indices to content list
+                from_ = counter
+                counter += cell.text.count('\n') + 1
+                to_ = counter
+                cell.set_content_range(from_, to_)
+                row_format.append(cell.to_dict())
+            formats.append(row_format)
+        return formats, content
+
+    def on_scroll_(self, evt):
+        """
+        @note: same as above ImageBox.
+        """
+        self.master.event_generate('<MouseWheel>', delta=evt.delta, state=evt.state)
+
+    def select_(self, evt):
+        obj = self.find_obj_('rectangle', evt.x, evt.y)
+        if obj == 0:
+            return
+        if not self._selected is None:
+            self.itemconfig(self._selected, fill='')
+        self._selected = obj
+        self.itemconfig(obj, fill='green')
+
+    def edit_(self, evt):
+        obj = self.find_obj_('rectangle', evt.x, evt.y)
+        if obj == 0:
+            return
+        if not self._selected is None:
+            self.itemconfig(self._selected, fill='')
+        self.itemconfig(obj, fill='green')
+        self._selected = obj
+        x1,y1,x2,y2 = self.bbox(obj)
+        tid = self.find_enclosed(x1+1, y1+1, x2-1, y2-1)
+        text = self.itemcget(tid, 'text')
+        self._edited.insert('1.0', text)
+        self._edited.place({'x':x1, 'y':y1, 'width':x2-x1, 'height':y2-y1})
+        self._edited.focus_set()
+
+    def find_obj_(self, type, x, y):
+        for obj in [o for o in self.find_all() if self.type(o) == type]:
+            x1, y1, x2, y2 = self.bbox(obj)
+            if x1 < x < x2 and y1 < y < y2:
+                return obj
+        return 0
+
+    def finish_edit_(self, evt):
+        content = self._edited.get('1.0', tk.END)
+        self._edited.delete('1.0', tk.END)
+        self._edited.place_forget()
+        content = content.strip(' \n')
+        x1,y1,x2,y2 = self.bbox(self._selected)
+        tid = self.find_enclosed(x1+1, y1+1, x2-1, y2-1)
+        self.itemconfig(tid, text=content)
+        self.draw_table(self.dump_table_())
+
+    def cancel_edit_(self, evt):
+        self._edited.delete('1.0', tk.END)
+        self._edited.place_forget()
+
+    def dump_table_(self):
+        all_rects = [w for w in self.find_all() if self.type(w) == 'rectangle']
+        #
+        row_height = {}
+        col_width = {}
+        for i in all_rects:
+            x1, y1, x2, y2 = self.bbox(i)
+            #
+            if x1 in col_width:
+                col_width[x1] = min(x2-x1-2, col_width[x1])  # 2 is two extra pixels around the rectangle
+            else:
+                col_width[x1] = x2-x1-2
+            #
+            if y1 in row_height:
+                row_height[y1] = min(y2-y1-2, row_height[y1])
+            else:
+                row_height[y1] = y2-y1-2
+        #
+        keys = [k for k in col_width]
+        keys.sort()
+        col_width = [col_width[k] for k in keys]
+        #
+        keys = [k for k in row_height]
+        keys.sort()
+        row_height = [row_height[k] for k in keys]
+        #
+        cells = {}
+        for i in all_rects:
+            x1, y1, x2, y2 = self.bbox(i)
+            objects = self.find_enclosed(x1+1, y1+1, x2-1, y2-1)         # text is smaller than rectangle
+            if len(objects) == 0:
+                objects = self.find_overlapping(x1+1, y1+1, x2-1, y2-1)  # text is larger than rectangle
+                objects = [o for o in objects if self.type(o) == 'text']
+            text = self.itemcget(objects[0], 'text')
+            cols = TextTableBox.TableCell.span(x1+1, x2-1, col_width)
+            rows = TextTableBox.TableCell.span(y1+1, y2-1, row_height)
+            cell = TextTableBox.TableCell(text, rows, cols, x1, i)
+            #
+            if y1 in cells:
+                cells[y1].append(cell)
+                cells[y1].sort(key=lambda i: i.x)
+            else:
+                cells[y1] = [cell]
+        #
+        keys = [k for k in cells]
+        keys.sort()
+        return [cells[k] for k in keys]
+
+    def on_popup_menu_(self, evt):
+        obj = self.find_obj_('rectangle', evt.x, evt.y)
+        if obj == 0:
+            return
+        if not self._selected is None:
+            self.itemconfig(self._selected, fill='')
+        self.itemconfig(obj, fill='green')
+        self._selected = obj
+        self._menu.post(*self.winfo_pointerxy())
+
+    def add_row_up(self):
+        table = self.dump_table_()
+        cols = 0
+        sel = 0
+        for i, row in enumerate(table):
+            cols = max(cols, len(row))
+            for cell in row:
+                if cell.rid() == self._selected:
+                    sel = i
+        table.insert(sel, [TextTableBox.TableCell('new') for _ in range(cols)])
+        self.draw_table(table)
+
+    def add_row_down(self):
+        table = self.dump_table_()
+        cols = 0
+        sel = 0
+        for i, row in enumerate(table):
+            cols = max(cols, len(row))
+            for cell in row:
+                if cell.rid() == self._selected:
+                    sel = i
+        table.insert(sel+1, [TextTableBox.TableCell('new') for _ in range(cols)])
+        self.draw_table(table)
+
+    def add_col_left(self):
+        table = self.dump_table_()
+        sel = 0
+        for row in table:
+            for i, cell in enumerate(row):
+                if cell.rid() == self._selected:
+                    sel = i
+        for row in table:
+            row.insert(sel, TextTableBox.TableCell('new'))
+        self.draw_table(table)
+
+    def add_col_right(self):
+        table = self.dump_table_()
+        sel = 0
+        for row in table:
+            for i, cell in enumerate(row):
+                if cell.rid() == self._selected:
+                    sel = i
+        for row in table:
+            row.insert(sel+1, TextTableBox.TableCell('new'))
+        self.draw_table(table)
+
+    def del_row(self):
+        table = self.dump_table_()
+        sel = 0
+        for i, row in enumerate(table):
+            for cell in row:
+                if cell.rid() == self._selected:
+                    sel = i
+        del table[sel]
+        self.draw_table(table)
+
+    def del_col(self):
+        table = self.dump_table_()
+        sel = 0
+        for row in table:
+            for i, cell in enumerate(row):
+                if cell.rid() == self._selected:
+                    sel = i
+        for row in table:
+            if sel < len(row):
+                del row[sel]
+        self.draw_table(table)
+
+    def merge_up(self):
+        pass
+
+    def merge_down(self):
+        pass
+
+    def merge_left(self):
+        pass
+
+    def merge_right(self):
+        pass
+
+    def header_row(self):
+        pass
+
+    def header_col(self):
+        pass
+
+    def split_horizontal(self):
+        pass
+
+    def split_vertical(self):
+        pass
 
 
 def unit_test_calendar():
