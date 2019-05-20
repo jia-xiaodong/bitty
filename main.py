@@ -1094,9 +1094,12 @@ class MainApp(tk.Tk):
                 self._editor.set_caption(editor, record.title)
         #
         # format-related misc
-        record.format, record.bulk = self.collect_misc_(editor.core())
-        if len(record.format) == 0:
+        specs, record.bulk = self.collect_misc_(editor.core())
+        # if len(record.format) == 0     <-- Wrong!
+        # Because record.format could be None if its hash isn't changed.
+        if len(specs) == 0:
             errors.add(MainApp.SAVE.FailSpecs)
+        record.format = specs
         #
         content = self.get_text(editor)
         if content == '':
@@ -1415,13 +1418,9 @@ At the age of 40.
         text.tag_config('sub', offset=-height/3)
 
     def load_content_(self, editor, text, spec, bulk):
-        core = editor.core()
-        if len(spec) == 0:
-            core.insert(tk.END, text)
-            return
-        #
         try:
-            idx = json.loads(spec)
+            core = editor.core()
+            idx = json.loads(spec) if len(spec) > 0 else {}
             # 1. table
             tables = idx.pop('table', [])
             table_windows = []
