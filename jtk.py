@@ -20,6 +20,13 @@ import jex
 PLATFORM = jex.enum1(Darwin=0, Win=1)
 curr_os = PLATFORM.Darwin if platform.startswith('darwin') else PLATFORM.Win
 
+'''
+It's a magic number.
+But canvas paint everything from this coordinate, not zero!
+I don't know why. Maybe someone can tell me.
+'''
+CANVAS_BIAS = 3
+
 
 class CreateToolTip:
     """
@@ -1225,8 +1232,6 @@ class SearchBar(tk.Frame):
 
 
 class ImageBox(tk.Canvas):
-    BIAS = 3
-
     def __init__(self, master, *a, **kw):
         """
         keyword arguments:
@@ -1271,7 +1276,7 @@ class ImageBox(tk.Canvas):
         row2.pack(side=tk.TOP)
         tk.Scale(row2, orient=tk.HORIZONTAL, variable=self._scale, from_=1).pack(side=tk.LEFT)
         tk.Button(row2, text='Export', command=self.dump).pack(side=tk.LEFT, anchor=tk.S)
-        self._hud = self.create_window(ImageBox.BIAS, ImageBox.BIAS, anchor=tk.NW, window=self._hudw, state=tk.HIDDEN)
+        self._hud = self.create_window(CANVAS_BIAS, CANVAS_BIAS, anchor=tk.NW, window=self._hudw, state=tk.HIDDEN)
         #
         self.display_()
 
@@ -1302,7 +1307,7 @@ class ImageBox(tk.Canvas):
         elif self._dst.width() != new_w:
             # impose a restriction upon canvas to avoid it's too small.
             canvas_w = max(new_w, self._hudw.winfo_width())
-            if self.winfo_width() != canvas_w+ImageBox.BIAS*2:
+            if self.winfo_width() != canvas_w+CANVAS_BIAS*2:
                 canvas_h = int(self._src.height * canvas_w / self._src.width)
                 self.config(width=canvas_w, height=canvas_h)
         # display image properties
@@ -1323,7 +1328,7 @@ class ImageBox(tk.Canvas):
             src = self._src
         self._dst = ImageTk.PhotoImage(image=src.resize((new_w, new_h)))
         if self._iid == 0:
-            self._iid = self.create_image(ImageBox.BIAS, ImageBox.BIAS, anchor=tk.NW, image=self._dst)
+            self._iid = self.create_image(CANVAS_BIAS, CANVAS_BIAS, anchor=tk.NW, image=self._dst)
         else:
             self.itemconfig(self._iid, image=self._dst)
 
@@ -1360,57 +1365,26 @@ class ImageBox(tk.Canvas):
 
 
 class TextTableBox(tk.Canvas):
-    HEIGHT = 0
-    PADDING = 0
-    #
-    # It's a magic number.
-    # But canvas paint everything from this coordinate, not zero!
-    # I don't know why. Maybe someone can tell me.
-    BIAS = 3
-
-    class TableCell:
-        def __init__(self, text, rows=1, cols=1, x=0, rid=0):
+    class Cell:
+        def __init__(self, grid_index, text, row_span=1, col_span=1):
+            self.grid = grid_index
             self.text = text
-            self.rows = rows  # vertical span
-            self.cols = cols  # horizontal span
-            self.x = x        # for sort only
-            self.from_ = -1
-            self.to_ = -1
-            self._rect_id = rid
+            self.rows = row_span
+            self.cols = col_span
+            self.rid = 0
+            self.tid = 0
 
-        def set_content_range(self, from_, to_):
-            self.from_ = from_
-            self.to_ = to_
+        def set_id(self, rect, text):
+            self.rid = rect
+            self.tid = text
 
         def to_dict(self):
-            d = {"from": self.from_, "to": self.to_}
+            d = {"from": 0, "to": 0}
             if self.rows > 1:
                 d["rows"] = self.rows
             if self.cols > 1:
                 d["cols"] = self.cols
             return d
-
-        def rid(self):
-            return self._rect_id
-
-        @staticmethod
-        def span(coord1, coord2, configs):
-            """
-            calculate row span and column span.
-            @param: both coord1 and coord2 is the pixel that just resides on rectangle.
-            @param configs: is array of all cells' length (width or height), including only one side of frame.
-            """
-            def cell_index(c):
-                coord = TextTableBox.BIAS
-                idx = 0
-                while c > coord:
-                    coord += configs[idx]
-                    idx += 1
-                return idx
-            idx1 = cell_index(coord1)
-            idx2 = cell_index(coord2)
-            return idx2 - idx1
-
 
     class Popup(tk.Menu):
         def __init__(self, master):
@@ -1440,51 +1414,119 @@ class TextTableBox(tk.Canvas):
             cascade.add_command(label='horizontal', command=master.split_horizontal)
             cascade.add_command(label='vertical', command=master.split_vertical)
             self.add_cascade(label='split cell', menu=cascade)
-            #
-            cascade = tk.Menu(self)
-            cascade.add_command(label='row', command=master.header_row)
-            cascade.add_command(label='column', command=master.header_col)
-            self.add_cascade(label='header', menu=cascade)
 
+    HEIGHT = 0
+    PADDING = 0
 
     def __init__(self, master, *a, **kw):
-        """
-        @param table: keyword parameter, looks like below JSON:
-        [[{"text":"abcd\ndef","rows":2},{"text":"gh","cols":2}],[{"text":"hello"},{"text":"world","rows":2}],[{"text":"foobar"},{"text":"great"}]]
-        """
-        table = TextTableBox.spec_to_table(kw.pop('table'))
+        self._table = None
+        self.grid_ws = None  # width of columns
+        self.grid_hs = None  # height of rows
+        #
         self._font = kw.pop('font')
         TextTableBox.HEIGHT = self._font.metrics("linespace")
         TextTableBox.PADDING = TextTableBox.HEIGHT / 4
+        self.specs_to_table(kw.pop('table'))
         #
         tk.Canvas.__init__(self, master, *a, **kw)
-        #
-        self.draw_table(table)
+        self.draw_table()
         #
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
         self.bind('<1>', self.select_)
         self.bind('<Double-1>', self.edit_)
-        self.bind('<2>', self.on_popup_menu_)
-        self._menu = TextTableBox.Popup(self)
-        #
         self._selected = None
         self._edited = tk.Text(self, font=self._font)
-        self._edited.bind('<Return>', self.finish_edit_)
-        self._edited.bind('<Escape>', self.cancel_edit_)
-        self.bind('<Leave>', self.cancel_edit_)
+        self._edited.bind('<Control-Return>', self.finish_edit_)
+        self._edited.bind('<Escape>', self.hide_input_)
+        self.bind('<Leave>', self.hide_input_)
+        #
+        self.bind('<2>', self.on_popup_menu_)
+        self._menu = TextTableBox.Popup(self)
 
-    @staticmethod
-    def spec_to_table(specs):
-        table = []
-        for row in specs:
+    def draw_table(self):
+        self.delete(tk.ALL)
+        for row in self._table:
+            for cell in row:
+                i, j = divmod(cell.grid, self.grid_cols())
+                w, h = self.cell_size(cell)
+                top = sum(self.grid_hs[:i], CANVAS_BIAS)
+                left = sum(self.grid_ws[:j], CANVAS_BIAS)
+                bottom = top + h
+                right = left + w
+                #
+                rid = self.create_rectangle(left, top, right, bottom)
+                x = (left + right) / 2
+                y = (top + bottom) / 2
+                tid = self.create_text(x, y, anchor=tk.CENTER, text=cell.text, font=self._font)
+                cell.set_id(rid, tid)
+        #
+        # update canvas size; no need to add BIAS
+        self.config(width=sum(self.grid_ws, CANVAS_BIAS), height=sum(self.grid_hs, CANVAS_BIAS))
+
+    def specs_to_table(self, config):
+        """
+        @param config: a dict, describing the table data and structure.
+        """
+        try:
             cells = []
-            for col in row:
-                t = col.get('text', '')
-                r = col.get('rows', 1)
-                c = col.get('cols', 1)
-                cells.append(TextTableBox.TableCell(t, r, c))
-            table.append(cells)
-        return table
+            matrix = [[] for i in range(len(config))]
+            grid_columns = 0
+            for i, row in enumerate(config):
+                row_data = []
+                j = 0  # grid index, start from zero
+                for cell in row:
+                    while j < len(matrix[i]) and matrix[i][j] == 1:
+                        j += 1
+                    t = cell.get('text', '')
+                    r = cell.get('rows', 1)
+                    c = cell.get('cols', 1)
+                    row_data.append(TextTableBox.Cell(i*grid_columns+j, t, r, c))
+                    #
+                    for m in range(i, i+r):
+                        for n in range(j, j+c):
+                            if n >= len(matrix[m]):
+                                matrix[m].extend([0] * (n-len(matrix[m])+1))
+                            matrix[m][n] = 1
+                    j += c
+                if grid_columns == 0:
+                    grid_columns = j
+                elif grid_columns != len(matrix[i]):
+                    raise ValueError("Table has wrong structure of row %s." % i)
+                cells.append(row_data)
+            #
+            self._table = cells
+            #
+            self.clear_cowh(len(cells), grid_columns)
+            self.update_cowh()
+        except Exception as e:
+            print(e)
+
+    def dump(self):
+        content = []
+        formats = []
+        for row in self._table:
+            row_format = []
+            for cell in row:
+                text = cell.text.split('\n')
+                spec = cell.to_dict()
+                spec['from'] = len(content)
+                content.extend(text)
+                spec['to'] = len(content)
+                row_format.append(spec)
+            formats.append(row_format)
+        return formats, content
+
+    def cell_size(self, cell):
+        i, j = divmod(cell.grid, len(self.grid_ws))
+        h = sum(self.grid_hs[i:i+cell.rows])
+        w = sum(self.grid_ws[j:j+cell.cols])
+        return w, h
+
+    def grid_cols(self):
+        return len(self.grid_ws)
+
+    def grid_rows(self):
+        return len(self.grid_hs)
 
     @staticmethod
     def set_spec_text(specs, content):
@@ -1495,289 +1537,605 @@ class TextTableBox(tk.Canvas):
                 cell['text'] = '\n'.join(content[from_:to_])
         return specs
 
-    def draw_table(self, table):
-        self.delete(tk.ALL)
-        # 1.
-        col_width = []
-        row_height = []
-        matrix = [[] for i in range(len(table))]
-        for i, row in enumerate(table):
-            j = 0
-            for cell in row:
-                while j < len(matrix[i]) and matrix[i][j] == 1:
-                    j += 1
-                lines = cell.text.split('\n')
-                width = max([self._font.measure(k) for k in lines]) / cell.cols + TextTableBox.PADDING*2
-                height = len(lines) / cell.rows
-                for m in range(i, i+cell.rows):
-                    for n in range(j, j+cell.cols):
-                        old_w = col_width[n] if n < len(col_width) else 0
-                        old_h = row_height[m] if m < len(row_height) else 0
-                        if width > old_w:
-                            if n < len(col_width):
-                                col_width[n] = width
-                            else:
-                                col_width.append(width)
-                        if height > old_h:
-                            if m < len(row_height):
-                                row_height[m] = height
-                            else:
-                                row_height.append(height)
-                        if n >= len(matrix[m]):
-                            matrix[m].extend([0]*(n-len(matrix[m])+1))
-                        matrix[m][n] = 1
-                j += cell.cols
-        # 2.
-        matrix = []
-        for i in range(len(row_height)):
-            row = [0 for j in range(len(col_width))]
-            matrix.append(row)
-        # 3.
-        row_start = TextTableBox.BIAS
-        for i, row in enumerate(table):
-            j = 0
-            col_start = TextTableBox.BIAS
-            for cell in row:
-                # find a unoccupied grid
-                while matrix[i][j] == 1:
-                    col_start += col_width[j]
-                    j += 1
-                bottom = sum([2*TextTableBox.PADDING + m*TextTableBox.HEIGHT for m in row_height[i:i+cell.rows]], row_start)
-                right = sum(col_width[j:j+cell.cols], col_start)
-                #
-                self.create_rectangle(col_start, row_start, right, bottom)
-                x = (col_start + right) / 2
-                y = (row_start + bottom) / 2
-                self.create_text(x, y, anchor=tk.CENTER, text=cell.text, font=self._font)
-                # update matrix
-                for m in range(i, i+cell.rows):
-                    for n in range(j, j+cell.cols):
-                        matrix[m][n] = 1
-                #
-                col_start = right
-                j += cell.cols
-            row_start += 2 * TextTableBox.PADDING + row_height[i] * TextTableBox.HEIGHT
-        # 4. update Canvas size
-        self.config(width=sum(col_width, 3), height=row_start)
-
-    def dump(self):
-        cells = self.dump_table_()
-        content = []
-        formats = []
-        counter = 0
-        for row in cells:
-            row_format = []
-            for cell in row:
-                content.extend(cell.text.split('\n'))
-                # from_, to_ are indices to content list
-                from_ = counter
-                counter += cell.text.count('\n') + 1
-                to_ = counter
-                cell.set_content_range(from_, to_)
-                row_format.append(cell.to_dict())
-            formats.append(row_format)
-        return formats, content
-
     def on_scroll_(self, evt):
-        """
-        @note: same as above ImageBox.
-        """
         self.master.event_generate('<MouseWheel>', delta=evt.delta, state=evt.state)
 
     def select_(self, evt):
-        obj = self.find_obj_('rectangle', evt.x, evt.y)
-        if obj == 0:
-            return
-        if not self._selected is None:
-            self.itemconfig(self._selected, fill='')
-        self._selected = obj
-        self.itemconfig(obj, fill='green')
+        self.select_cell(evt.x, evt.y)
 
     def edit_(self, evt):
-        obj = self.find_obj_('rectangle', evt.x, evt.y)
-        if obj == 0:
+        cell = self.select_cell(evt.x, evt.y)
+        if cell is None:
             return
-        if not self._selected is None:
-            self.itemconfig(self._selected, fill='')
-        self.itemconfig(obj, fill='green')
-        self._selected = obj
-        x1,y1,x2,y2 = self.bbox(obj)
-        tid = self.find_enclosed(x1+1, y1+1, x2-1, y2-1)
-        text = self.itemcget(tid, 'text')
+        x1, y1, x2, y2 = self.bbox(cell.rid)
+        text = self.itemcget(cell.tid, 'text')
         self._edited.insert('1.0', text)
-        self._edited.place({'x':x1, 'y':y1, 'width':x2-x1, 'height':y2-y1})
+        self._edited.place({'x': x1, 'y': y1, 'width': x2-x1, 'height': y2-y1})
         self._edited.focus_set()
-
-    def find_obj_(self, type, x, y):
-        for obj in [o for o in self.find_all() if self.type(o) == type]:
-            x1, y1, x2, y2 = self.bbox(obj)
-            if x1 < x < x2 and y1 < y < y2:
-                return obj
-        return 0
 
     def finish_edit_(self, evt):
         content = self._edited.get('1.0', tk.END)
-        self._edited.delete('1.0', tk.END)
-        self._edited.place_forget()
         content = content.strip(' \n')
-        x1,y1,x2,y2 = self.bbox(self._selected)
-        tid = self.find_enclosed(x1+1, y1+1, x2-1, y2-1)
-        self.itemconfig(tid, text=content)
-        self.draw_table(self.dump_table_())
+        self._selected.text = content
+        self.hide_input_()
+        #
+        # re-calculate the configuration of width/height before re-drawing of whole table
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        self.update_cowh()
+        #
+        self.draw_table()
 
-    def cancel_edit_(self, evt):
+    def clear_cowh(self, rows, cols):
+        """
+        cowh: Configuration Of Width / Height (of grids).
+        """
+        self.grid_ws = [0 for _ in range(cols)]
+        self.grid_hs = [0 for _ in range(rows)]
+
+    def update_cowh(self):
+        """
+        adjust configurations of width / height.
+        """
+        for row in self._table:
+            for cell in row:
+                lines = cell.text.split('\n')
+                width = max([self._font.measure(k) for k in lines]) / cell.cols + TextTableBox.PADDING*2
+                height = TextTableBox.HEIGHT * len(lines) / cell.rows + TextTableBox.PADDING*2
+                i, j = divmod(cell.grid, self.grid_cols())
+                for m in range(i, i+cell.rows):
+                    for n in range(j, j+cell.cols):
+                        if width > self.grid_ws[n]:
+                            self.grid_ws[n] = width
+                        if height > self.grid_hs[m]:
+                            self.grid_hs[m] = height
+
+    def hide_input_(self, evt=None):
         self._edited.delete('1.0', tk.END)
         self._edited.place_forget()
 
-    def dump_table_(self):
-        all_rects = [w for w in self.find_all() if self.type(w) == 'rectangle']
-        #
-        row_height = {}
-        col_width = {}
-        for i in all_rects:
-            x1, y1, x2, y2 = self.bbox(i)
-            #
-            if x1 in col_width:
-                col_width[x1] = min(x2-x1-2, col_width[x1])  # 2 is two extra pixels around the rectangle
-            else:
-                col_width[x1] = x2-x1-2
-            #
-            if y1 in row_height:
-                row_height[y1] = min(y2-y1-2, row_height[y1])
-            else:
-                row_height[y1] = y2-y1-2
-        #
-        keys = [k for k in col_width]
-        keys.sort()
-        col_width = [col_width[k] for k in keys]
-        #
-        keys = [k for k in row_height]
-        keys.sort()
-        row_height = [row_height[k] for k in keys]
-        #
-        cells = {}
-        for i in all_rects:
-            x1, y1, x2, y2 = self.bbox(i)
-            objects = self.find_enclosed(x1+1, y1+1, x2-1, y2-1)         # text is smaller than rectangle
-            if len(objects) == 0:
-                objects = self.find_overlapping(x1+1, y1+1, x2-1, y2-1)  # text is larger than rectangle
-                objects = [o for o in objects if self.type(o) == 'text']
-            text = self.itemcget(objects[0], 'text')
-            cols = TextTableBox.TableCell.span(x1+1, x2-1, col_width)
-            rows = TextTableBox.TableCell.span(y1+1, y2-1, row_height)
-            cell = TextTableBox.TableCell(text, rows, cols, x1, i)
-            #
-            if y1 in cells:
-                cells[y1].append(cell)
-                cells[y1].sort(key=lambda i: i.x)
-            else:
-                cells[y1] = [cell]
-        #
-        keys = [k for k in cells]
-        keys.sort()
-        return [cells[k] for k in keys]
+    def find_cell(self, x, y):
+        for row in self._table:
+            for cell in row:
+                x1, y1, x2, y2 = self.bbox(cell.rid)
+                if x1 < x < x2 and y1 < y < y2:
+                    return cell
+        return None
 
     def on_popup_menu_(self, evt):
-        obj = self.find_obj_('rectangle', evt.x, evt.y)
-        if obj == 0:
-            return
+        if self.select_cell(evt.x, evt.y):
+            self._menu.post(*self.winfo_pointerxy())
+
+    def select_cell(self, x, y):
+        cell = self.find_cell(x, y)
+        if cell is None:
+            return None
         if not self._selected is None:
-            self.itemconfig(self._selected, fill='')
-        self.itemconfig(obj, fill='green')
-        self._selected = obj
-        self._menu.post(*self.winfo_pointerxy())
+            self.itemconfig(self._selected.rid, fill='')
+        self.itemconfig(cell.rid, fill='green')
+        self._selected = cell
+        return cell
+
+    def grid_to_cell(self, grid_id):
+        for row in self._table:
+            for cell in row:
+                all_grids = []
+                row_id, col_id = divmod(cell.grid, self.grid_cols())
+                for i in range(row_id, row_id+cell.rows):
+                    start = i * self.grid_cols() + col_id
+                    all_grids.extend(range(start, start + cell.cols))
+                if grid_id in all_grids:
+                    return cell
+        return None
 
     def add_row_up(self):
-        table = self.dump_table_()
-        cols = 0
-        sel = 0
-        for i, row in enumerate(table):
-            cols = max(cols, len(row))
+        row = self._selected.grid / self.grid_cols()
+        first_cell = self._table[row][0]
+        cells = []
+        reached = False
+        for row in self._table:
             for cell in row:
-                if cell.rid() == self._selected:
-                    sel = i
-        table.insert(sel, [TextTableBox.TableCell('new') for _ in range(cols)])
-        self.draw_table(table)
+                if reached:
+                    cells.append(cell)
+                elif cell == first_cell:
+                    cells.extend([TextTableBox.Cell(0, 'new') for _ in range(self.grid_cols())])
+                    cells.append(cell)
+                    reached = True
+                else:
+                    cells.append(cell)
+        self.clear_cowh(self.grid_rows()+1, self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def add_row_down(self):
-        table = self.dump_table_()
-        cols = 0
-        sel = 0
-        for i, row in enumerate(table):
-            cols = max(cols, len(row))
+        row = self._selected.grid / self.grid_cols()
+        last_cell = self._table[row][-1]
+        cells = []
+        reached = False
+        for row in self._table:
             for cell in row:
-                if cell.rid() == self._selected:
-                    sel = i
-        table.insert(sel+1, [TextTableBox.TableCell('new') for _ in range(cols)])
-        self.draw_table(table)
+                if reached:
+                    cells.append(cell)
+                elif cell == last_cell:
+                    cells.append(cell)
+                    cells.extend([TextTableBox.Cell(0, 'new') for _ in range(self.grid_cols())])
+                    reached = True
+                else:
+                    cells.append(cell)
+        self.clear_cowh(self.grid_rows()+1, self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def add_col_left(self):
-        table = self.dump_table_()
-        sel = 0
-        for row in table:
-            for i, cell in enumerate(row):
-                if cell.rid() == self._selected:
-                    sel = i
-        for row in table:
-            row.insert(sel, TextTableBox.TableCell('new'))
-        self.draw_table(table)
+        col = self._selected.grid % self.grid_cols()
+        affected = []
+        for i, row in enumerate(self._table):
+            for j, cell in enumerate(row):
+                left = cell.grid % self.grid_cols()
+                if left <= col < left + cell.cols:
+                    affected.append((i, j, cell))
+        for i, j, c in affected:
+            self._table[i].insert(j, TextTableBox.Cell(0, 'new', c.rows))
+        cells = []
+        for row in self._table:
+            cells.extend(row)
+        self.clear_cowh(self.grid_rows(), self.grid_cols()+1)
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def add_col_right(self):
-        table = self.dump_table_()
-        sel = 0
-        for row in table:
-            for i, cell in enumerate(row):
-                if cell.rid() == self._selected:
-                    sel = i
-        for row in table:
-            row.insert(sel+1, TextTableBox.TableCell('new'))
-        self.draw_table(table)
+        col = self._selected.grid % self.grid_cols()
+        affected = []
+        for i, row in enumerate(self._table):
+            for j, cell in enumerate(row):
+                left = cell.grid % self.grid_cols()
+                if left <= col < left + cell.cols:
+                    affected.append((i, j, cell))
+        for i, j, c in affected:
+            self._table[i].insert(j+1, TextTableBox.Cell(0, 'new', c.rows))
+        cells = []
+        for row in self._table:
+            cells.extend(row)
+        self.clear_cowh(self.grid_rows(), self.grid_cols()+1)
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def del_row(self):
-        table = self.dump_table_()
-        sel = 0
-        for i, row in enumerate(table):
+        row = self._selected.grid / self.grid_cols()
+        affected = []
+        start = row * self.grid_cols()
+        for i in range(start, start + self.grid_cols()):
+            cell = self.grid_to_cell(i)
+            if cell not in affected:
+                affected.append(cell)
+        cells = []
+        for row in self._table:
             for cell in row:
-                if cell.rid() == self._selected:
-                    sel = i
-        del table[sel]
-        self.draw_table(table)
+                if cell not in affected:
+                    cells.append(cell)
+                elif cell.rows > 1:
+                    cell.rows -= 1
+                    cells.append(cell)
+        self.clear_cowh(self.grid_rows()-1, self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def del_col(self):
-        table = self.dump_table_()
-        sel = 0
-        for row in table:
-            for i, cell in enumerate(row):
-                if cell.rid() == self._selected:
-                    sel = i
-        for row in table:
-            if sel < len(row):
-                del row[sel]
-        self.draw_table(table)
+        col = self._selected.grid % self.grid_cols()
+        affected = []
+        for i in [i*self.grid_cols()+col for i in range(self.grid_rows())]:
+            cell = self.grid_to_cell(i)
+            if cell not in affected:
+                affected.append(cell)
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell not in affected:
+                    cells.append(cell)
+                elif cell.cols > 1:
+                    cell.cols -= 1
+                    cells.append(cell)
+        self.clear_cowh(self.grid_rows(), self.grid_cols()-1)
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def merge_up(self):
-        pass
+        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        above = self.grid_to_cell(self.grid_cols()*(r1-1) + c1)
+        if above is None:
+            return
+        r2, c2 = divmod(above.grid, self.grid_cols())
+        if c1 != c2:
+            return
+        if self._selected.cols != above.cols:
+            return
+        above.rows += self._selected.rows
+        above.text = '%s\n%s' % (above.text, self._selected.text)
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell != self._selected:
+                  cells.append(cell)
+        self._selected = None
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def merge_down(self):
-        pass
+        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        below = self.grid_to_cell(self.grid_cols()*(r1+self._selected.rows) + c1)
+        if below is None:
+            return
+        r2, c2 = divmod(below.grid, self.grid_cols())
+        if c1 != c2:
+            return
+        if self._selected.cols != below.cols:
+            return
+        self._selected.rows += below.rows
+        self._selected.text = '%s\n%s' % (self._selected.text, below.text)
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell != below:
+                  cells.append(cell)
+        self._selected = None
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def merge_left(self):
-        pass
+        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        if c1 == 0:
+            return
+        left = self.grid_to_cell(self._selected.grid-1)
+        r2, c2 = divmod(left.grid, self.grid_cols())
+        if r1 != r2:
+            return
+        if self._selected.rows != left.rows:
+            return
+        left.cols += self._selected.cols
+        left.text = '%s\n%s' % (left.text, self._selected.text)
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell != self._selected:
+                  cells.append(cell)
+        self._selected = None
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def merge_right(self):
-        pass
-
-    def header_row(self):
-        pass
-
-    def header_col(self):
-        pass
+        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        if c1 + self._selected.cols == self.grid_cols():
+            return
+        right = self.grid_to_cell(self._selected.grid+1)
+        r2, c2 = divmod(right.grid, self.grid_cols())
+        if r1 != r2:
+            return
+        if self._selected.rows != right.rows:
+            return
+        self._selected.cols += right.cols
+        self._selected.text = '%s\n%s' % (self._selected.text, right.text)
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell != right:
+                  cells.append(cell)
+        self._selected = None
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def split_horizontal(self):
-        pass
+        if self._selected.cols == 1:
+            return
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell != self._selected:
+                    cells.append(cell)
+                else:
+                    for i in range(0, cell.cols):
+                        cells.append(TextTableBox.Cell(0, cell.text, cell.rows))
+        self._selected = None
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
     def split_vertical(self):
-        pass
+        if self._selected.rows == 1:
+            return
+        cells = []
+        for row in self._table:
+            for cell in row:
+                if cell == self._selected:
+                    r, c = divmod(cell.grid, self.grid_cols())
+                    for i in range(r+1, r+cell.rows):
+                        grid_idx = i * self.grid_cols() + c
+                        cells.append(TextTableBox.Cell(grid_idx, cell.text, 1, cell.cols))
+                    cell.rows = 1
+                cells.append(cell)
+        cells.sort(key=lambda i: i.grid)
+        self._selected = None
+        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        new_table = []
+        matrix = [0] * self.grid_cols() * self.grid_rows()
+        i, j = 0, 0
+        new_row = []
+        while i < len(cells):
+            cells[i].grid = j
+            new_row.append(cells[i])
+            #
+            r, c = divmod(j, self.grid_cols())
+            for m in range(r, r+cells[i].rows):
+                for n in range(c, c+cells[i].cols):
+                    matrix[m * self.grid_cols() + n] = 1
+            #
+            i += 1
+            if i == len(cells):
+                new_table.append(new_row)
+                break
+            while matrix[j] == 1:
+                j += 1
+                if j % self.grid_cols() == 0:
+                    new_table.append(new_row)
+                    new_row = []
+        self._table[:] = new_table
+        self.update_cowh()
+        self.draw_table()
 
 
 def unit_test_calendar():

@@ -1014,6 +1014,7 @@ class MainApp(tk.Tk):
             return
         self._store = jdb.NoteStore(filename)
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
+        self.title('[%s] %s' % (MainApp.TITLE, os.path.basename(filename)))
 
     def menu_database_close_(self):
         if self._store is None:
@@ -1026,6 +1027,7 @@ class MainApp(tk.Tk):
         self._store.close()
         self._store = None
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
+        self.title(MainApp.TITLE)
         return True
 
     def quit_(self):
@@ -1038,7 +1040,7 @@ class MainApp(tk.Tk):
 
     def menu_doc_new_(self, evt=None):
         editor = self._editor.new_editor(MainApp.UNNAMED)
-        self.config_core(editor.core())
+        self.config_core(editor)
         editor.monitor_change()
         self._editor.switch_tab(editor)
         if self._editor.count() == 1:
@@ -1058,14 +1060,9 @@ class MainApp(tk.Tk):
                     continue
             # if not open, open it
             editor = self._editor.new_editor(note.title)
-            self.config_core(editor.core())
-            #
-            t, s, b = self._store.read_rich(note.sn)
-            self.load_content_(editor, t, s, b)
+            self.config_core(editor)
             self._editor.switch_tab(editor)
-            #
-            note.init_digest(text=t, spec=s, bulk=b)
-            self._notes[editor] = note
+            self.load_content_(editor, note)
             #
             if self._editor.count() == 1:
                 self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
@@ -1409,7 +1406,8 @@ At the age of 40.
         idx = '' if len(root) == 0 else json.dumps(root)
         return idx, bulk
 
-    def config_core(self, text):
+    def config_core(self, editor):
+        text = editor.core()
         text.tag_config('underline', underline=1)
         text.tag_config('list', lmargin1=12, lmargin2=12)  # 12 pixels, for list
         #
@@ -1417,8 +1415,9 @@ At the age of 40.
         text.tag_config('sup', offset=height/3)
         text.tag_config('sub', offset=-height/3)
 
-    def load_content_(self, editor, text, spec, bulk):
+    def load_content_(self, editor, note):
         try:
+            text, spec, bulk = self._store.read_rich(note.sn)
             core = editor.core()
             idx = json.loads(spec) if len(spec) > 0 else {}
             # 1. table
@@ -1483,6 +1482,8 @@ At the age of 40.
         except Exception as e:
             print('Error: %s' % e)
         editor.monitor_change()
+        note.init_digest(text=text, spec=spec, bulk=bulk)
+        self._notes[editor] = note
 
     def copy_from_clipboard_(self):
         editor = self._editor.active()
@@ -1505,13 +1506,19 @@ At the age of 40.
             if isinstance(windows[0], basestring):
                 windows = map(text.nametowidget, windows)
             windows = [w for w in windows if isinstance(w, jtk.TextTableBox)]
+            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
+            for w in windows:
+                line, col = text.index(w).split('.')
+                line = int(line) - 1
+                col = int(col)
+                content[line] = '%s?%s' % (content[line][:col], content[line][col:])
             windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1, reverse=True)
             for w in windows:
                 _, lines = w.dump()
                 line, col = text.index(w).split('.')
                 line = int(line) - 1
                 col = int(col)
-                content[line] = '%s%s%s' % (content[line][:col], '\n'.join(lines), content[line][col:])
+                content[line] = '%s%s%s' % (content[line][:col], '\n'.join(lines), content[line][col+1:])
         return '\n'.join(content)
 
 
