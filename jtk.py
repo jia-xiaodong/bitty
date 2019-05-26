@@ -1288,6 +1288,7 @@ class ImageBox(tk.Canvas):
             self.after_cancel(self._gif_task)
             self._gif_task = 0
         self.after(100, self.display_)
+        self.on_modified_()
 
     def toggle_(self, evt):
         if not self.is_gif():
@@ -1363,6 +1364,14 @@ class ImageBox(tk.Canvas):
         """
         self.master.event_generate('<MouseWheel>', delta=evt.delta, state=evt.state)
 
+    def on_modified_(self):
+        """
+        notify the TextEditor that it may wants a saving.
+        """
+        w = self.master.master
+        if isinstance(w, TextEditor):
+            w.on_modified()
+
 
 class TextTableBox(tk.Canvas):
     class Cell:
@@ -1426,13 +1435,13 @@ class TextTableBox(tk.Canvas):
         self._font = kw.pop('font')
         TextTableBox.HEIGHT = self._font.metrics("linespace")
         TextTableBox.PADDING = TextTableBox.HEIGHT / 4
-        self.specs_to_table(kw.pop('table'))
+        rows, cols = self.specs_to_table(kw.pop('table'))
         #
         tk.Canvas.__init__(self, master, *a, **kw)
-        self.draw_table()
+        self.draw_table(rows, cols)
         #
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
-        self.bind('<1>', self.select_)
+        self.bind('<1>', lambda evt: self.select_cell(evt.x, evt.y))
         self.bind('<Double-1>', self.edit_)
         self._selected = None
         self._edited = tk.Text(self, font=self._font)
@@ -1443,11 +1452,13 @@ class TextTableBox(tk.Canvas):
         self.bind('<2>', self.on_popup_menu_)
         self._menu = TextTableBox.Popup(self)
 
-    def draw_table(self):
+    def draw_table(self, rows, cols):
         self.delete(tk.ALL)
+        #
+        self.reset_cowh_(rows, cols)
         for row in self._table:
             for cell in row:
-                i, j = divmod(cell.grid, self.grid_cols())
+                i, j = divmod(cell.grid, cols)
                 w, h = self.cell_size(cell)
                 top = sum(self.grid_hs[:i], CANVAS_BIAS)
                 left = sum(self.grid_ws[:j], CANVAS_BIAS)
@@ -1465,6 +1476,7 @@ class TextTableBox(tk.Canvas):
 
     def specs_to_table(self, config):
         """
+        turn a dictionary of specifications to an array of table cell objects.
         @param config: a dict, describing the table data and structure.
         """
         try:
@@ -1473,7 +1485,7 @@ class TextTableBox(tk.Canvas):
             grid_columns = 0
             for i, row in enumerate(config):
                 row_data = []
-                j = 0  # grid index, start from zero
+                j = 0  # grid index, starts from zero, ends when it reaches row's ending.
                 for cell in row:
                     while j < len(matrix[i]) and matrix[i][j] == 1:
                         j += 1
@@ -1495,9 +1507,7 @@ class TextTableBox(tk.Canvas):
                 cells.append(row_data)
             #
             self._table = cells
-            #
-            self.clear_cowh(len(cells), grid_columns)
-            self.update_cowh()
+            return len(cells), grid_columns
         except Exception as e:
             print(e)
 
@@ -1540,16 +1550,12 @@ class TextTableBox(tk.Canvas):
     def on_scroll_(self, evt):
         self.master.event_generate('<MouseWheel>', delta=evt.delta, state=evt.state)
 
-    def select_(self, evt):
-        self.select_cell(evt.x, evt.y)
-
     def edit_(self, evt):
         cell = self.select_cell(evt.x, evt.y)
         if cell is None:
             return
         x1, y1, x2, y2 = self.bbox(cell.rid)
-        text = self.itemcget(cell.tid, 'text')
-        self._edited.insert('1.0', text)
+        self._edited.insert('1.0', cell.text)
         self._edited.place({'x': x1, 'y': y1, 'width': x2-x1, 'height': y2-y1})
         self._edited.focus_set()
 
@@ -1558,30 +1564,22 @@ class TextTableBox(tk.Canvas):
         content = content.strip(' \n')
         self._selected.text = content
         self.hide_input_()
-        #
-        # re-calculate the configuration of width/height before re-drawing of whole table
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
-        self.update_cowh()
-        #
-        self.draw_table()
+        self.draw_table(self.grid_rows(), self.grid_cols())
+        self.on_modified_()
 
-    def clear_cowh(self, rows, cols):
+    def reset_cowh_(self, rows, cols):
         """
         cowh: Configuration Of Width / Height (of grids).
-        """
-        self.grid_ws = [0 for _ in range(cols)]
-        self.grid_hs = [0 for _ in range(rows)]
-
-    def update_cowh(self):
-        """
         adjust configurations of width / height.
         """
+        self.grid_hs = [0 for _ in range(rows)]
+        self.grid_ws = [0 for _ in range(cols)]
         for row in self._table:
             for cell in row:
                 lines = cell.text.split('\n')
                 width = max([self._font.measure(k) for k in lines]) / cell.cols + TextTableBox.PADDING*2
                 height = TextTableBox.HEIGHT * len(lines) / cell.rows + TextTableBox.PADDING*2
-                i, j = divmod(cell.grid, self.grid_cols())
+                i, j = divmod(cell.grid, cols)
                 for m in range(i, i+cell.rows):
                     for n in range(j, j+cell.cols):
                         if width > self.grid_ws[n]:
@@ -1618,13 +1616,11 @@ class TextTableBox(tk.Canvas):
     def grid_to_cell(self, grid_id):
         for row in self._table:
             for cell in row:
-                all_grids = []
                 row_id, col_id = divmod(cell.grid, self.grid_cols())
                 for i in range(row_id, row_id+cell.rows):
                     start = i * self.grid_cols() + col_id
-                    all_grids.extend(range(start, start + cell.cols))
-                if grid_id in all_grids:
-                    return cell
+                    if grid_id in range(start, start + cell.cols):
+                        return cell
         return None
 
     def add_row_up(self):
@@ -1642,32 +1638,7 @@ class TextTableBox(tk.Canvas):
                     reached = True
                 else:
                     cells.append(cell)
-        self.clear_cowh(self.grid_rows()+1, self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows()+1, self.grid_cols())
 
     def add_row_down(self):
         row = self._selected.grid / self.grid_cols()
@@ -1684,32 +1655,7 @@ class TextTableBox(tk.Canvas):
                     reached = True
                 else:
                     cells.append(cell)
-        self.clear_cowh(self.grid_rows()+1, self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows()+1, self.grid_cols())
 
     def add_col_left(self):
         col = self._selected.grid % self.grid_cols()
@@ -1724,32 +1670,7 @@ class TextTableBox(tk.Canvas):
         cells = []
         for row in self._table:
             cells.extend(row)
-        self.clear_cowh(self.grid_rows(), self.grid_cols()+1)
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols()+1)
 
     def add_col_right(self):
         col = self._selected.grid % self.grid_cols()
@@ -1764,32 +1685,7 @@ class TextTableBox(tk.Canvas):
         cells = []
         for row in self._table:
             cells.extend(row)
-        self.clear_cowh(self.grid_rows(), self.grid_cols()+1)
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols()+1)
 
     def del_row(self):
         row = self._selected.grid / self.grid_cols()
@@ -1807,32 +1703,7 @@ class TextTableBox(tk.Canvas):
                 elif cell.rows > 1:
                     cell.rows -= 1
                     cells.append(cell)
-        self.clear_cowh(self.grid_rows()-1, self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows()-1, self.grid_cols())
 
     def del_col(self):
         col = self._selected.grid % self.grid_cols()
@@ -1849,32 +1720,7 @@ class TextTableBox(tk.Canvas):
                 elif cell.cols > 1:
                     cell.cols -= 1
                     cells.append(cell)
-        self.clear_cowh(self.grid_rows(), self.grid_cols()-1)
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols()-1)
 
     def merge_up(self):
         r1, c1 = divmod(self._selected.grid, self.grid_cols())
@@ -1888,38 +1734,34 @@ class TextTableBox(tk.Canvas):
             return
         above.rows += self._selected.rows
         above.text = '%s\n%s' % (above.text, self._selected.text)
+        # check redundant rows
+        row_start = above.grid / self.grid_cols()
+        row_end = row_start + above.rows
+        for i in range(row_start, row_end):
+            row_cells = set([above])
+            for j in range(0, self.grid_cols()):
+                cell = self.grid_to_cell(i * self.grid_cols() + j)
+                if cell in row_cells:
+                    continue
+                bottom = cell.grid / self.grid_cols() + cell.rows
+                if bottom == i+1:
+                    row_cells.clear()
+                    break
+                row_cells.add(cell)
+            if len(row_cells) > 0:
+                break
+        for c in row_cells:
+            c.rows -= 1
+        #
         cells = []
         for row in self._table:
             for cell in row:
                 if cell != self._selected:
-                  cells.append(cell)
-        self._selected = None
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+                    cells.append(cell)
+        grid_rows = self.grid_rows()
+        if len(row_cells) > 0:
+            grid_rows -= 1
+        self.draw_cell_array_(cells, grid_rows, self.grid_cols())
 
     def merge_down(self):
         r1, c1 = divmod(self._selected.grid, self.grid_cols())
@@ -1933,38 +1775,34 @@ class TextTableBox(tk.Canvas):
             return
         self._selected.rows += below.rows
         self._selected.text = '%s\n%s' % (self._selected.text, below.text)
+        # check redundant rows
+        row_start = self._selected.grid / self.grid_cols()
+        row_end = row_start + self._selected.rows
+        for i in range(row_start, row_end):
+            row_cells = set([self._selected])
+            for j in range(0, self.grid_cols()):
+                cell = self.grid_to_cell(i * self.grid_cols() + j)
+                if cell in row_cells:
+                    continue
+                bottom = cell.grid / self.grid_cols() + cell.rows
+                if bottom == i+1:
+                    row_cells.clear()
+                    break
+                row_cells.add(cell)
+            if len(row_cells) > 0:
+                break
+        for c in row_cells:
+            c.rows -= 1
+        #
         cells = []
         for row in self._table:
             for cell in row:
                 if cell != below:
-                  cells.append(cell)
-        self._selected = None
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+                    cells.append(cell)
+        grid_rows = self.grid_rows()
+        if len(row_cells) > 0:
+            grid_rows -= 1
+        self.draw_cell_array_(cells, grid_rows, self.grid_cols())
 
     def merge_left(self):
         r1, c1 = divmod(self._selected.grid, self.grid_cols())
@@ -1982,34 +1820,8 @@ class TextTableBox(tk.Canvas):
         for row in self._table:
             for cell in row:
                 if cell != self._selected:
-                  cells.append(cell)
-        self._selected = None
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+                    cells.append(cell)
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols())
 
     def merge_right(self):
         r1, c1 = divmod(self._selected.grid, self.grid_cols())
@@ -2027,34 +1839,8 @@ class TextTableBox(tk.Canvas):
         for row in self._table:
             for cell in row:
                 if cell != right:
-                  cells.append(cell)
-        self._selected = None
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+                    cells.append(cell)
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols())
 
     def split_horizontal(self):
         if self._selected.cols == 1:
@@ -2067,33 +1853,7 @@ class TextTableBox(tk.Canvas):
                 else:
                     for i in range(0, cell.cols):
                         cells.append(TextTableBox.Cell(0, cell.text, cell.rows))
-        self._selected = None
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
-        new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
-        new_row = []
-        while i < len(cells):
-            cells[i].grid = j
-            new_row.append(cells[i])
-            #
-            r, c = divmod(j, self.grid_cols())
-            for m in range(r, r+cells[i].rows):
-                for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
-            #
-            i += 1
-            if i == len(cells):
-                new_table.append(new_row)
-                break
-            while matrix[j] == 1:
-                j += 1
-                if j % self.grid_cols() == 0:
-                    new_table.append(new_row)
-                    new_row = []
-        self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols())
 
     def split_vertical(self):
         if self._selected.rows == 1:
@@ -2109,20 +1869,30 @@ class TextTableBox(tk.Canvas):
                     cell.rows = 1
                 cells.append(cell)
         cells.sort(key=lambda i: i.grid)
-        self._selected = None
-        self.clear_cowh(self.grid_rows(), self.grid_cols())
+        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols())
+
+    def on_modified_(self):
+        w = self.master.master
+        if isinstance(w, TextEditor):
+            w.on_modified()
+
+    def draw_cell_array_(self, cells, row_num, col_num):
+        """
+        @param cells: array of table cells. One dimension.
+        @param row_num and col_num: the number of rows and cols of new table.
+        """
         new_table = []
-        matrix = [0] * self.grid_cols() * self.grid_rows()
-        i, j = 0, 0
+        matrix = [0] * row_num * col_num
+        i, j = 0, 0  # i is iterator to the cells; j is iterator to table grids
         new_row = []
         while i < len(cells):
             cells[i].grid = j
             new_row.append(cells[i])
             #
-            r, c = divmod(j, self.grid_cols())
+            r, c = divmod(j, col_num)
             for m in range(r, r+cells[i].rows):
                 for n in range(c, c+cells[i].cols):
-                    matrix[m * self.grid_cols() + n] = 1
+                    matrix[m * col_num + n] = 1
             #
             i += 1
             if i == len(cells):
@@ -2130,12 +1900,14 @@ class TextTableBox(tk.Canvas):
                 break
             while matrix[j] == 1:
                 j += 1
-                if j % self.grid_cols() == 0:
+                if j % col_num == 0:
                     new_table.append(new_row)
                     new_row = []
+        #
         self._table[:] = new_table
-        self.update_cowh()
-        self.draw_table()
+        self._selected = None
+        self.draw_table(row_num, col_num)
+        self.on_modified_()
 
 
 def unit_test_calendar():

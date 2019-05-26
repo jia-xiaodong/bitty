@@ -1340,12 +1340,18 @@ At the age of 40.
         editor.on_modified()
 
     def edit_insert_table_(self):
-        ts = self.clipboard_get()
-        table = json.loads(ts)
-        editor = self._editor.active()
-        table = jtk.TextTableBox(editor.core(), table=table, font=self._font)
-        editor.core().window_create(tk.INSERT, window=table)
-        editor.on_modified()
+        try:
+            ts = self.clipboard_get()
+            table = json.loads(ts)
+        except ValueError:
+            table = [[{'text': 'single-click'}, {'text': 'to select'}, {'text': 'table cell'}],
+                     [{'text': 'double-click'}, {'text': 'to edit'}, {'text': 'text'}],
+                     [{'text': 'control-enter'}, {'text': 'to finish'}, {'text': 'input'}]]
+        finally:
+            editor = self._editor.active()
+            w = jtk.TextTableBox(editor.core(), table=table, font=self._font)
+            editor.core().window_create(tk.INSERT, window=w)
+            editor.on_modified()
 
     def doc_export_html_(self):
         pass
