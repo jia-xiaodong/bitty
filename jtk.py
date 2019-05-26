@@ -1743,8 +1743,8 @@ class TextTableBox(tk.Canvas):
                 cell = self.grid_to_cell(i * self.grid_cols() + j)
                 if cell in row_cells:
                     continue
-                bottom = cell.grid / self.grid_cols() + cell.rows
-                if bottom == i+1:
+                bottom_bound = cell.grid / self.grid_cols() + cell.rows
+                if bottom_bound == i+1:
                     row_cells.clear()
                     break
                 row_cells.add(cell)
@@ -1784,8 +1784,8 @@ class TextTableBox(tk.Canvas):
                 cell = self.grid_to_cell(i * self.grid_cols() + j)
                 if cell in row_cells:
                     continue
-                bottom = cell.grid / self.grid_cols() + cell.rows
-                if bottom == i+1:
+                bottom_bound = cell.grid / self.grid_cols() + cell.rows
+                if bottom_bound == i+1:
                     row_cells.clear()
                     break
                 row_cells.add(cell)
@@ -1816,12 +1816,34 @@ class TextTableBox(tk.Canvas):
             return
         left.cols += self._selected.cols
         left.text = '%s\n%s' % (left.text, self._selected.text)
+        # check redundant column
+        col_start = left.grid % self.grid_cols()
+        col_end = col_start + left.cols
+        for i in range(col_start, col_end):
+            row_cells = set([left])
+            for j in range(0, self.grid_rows()):
+                cell = self.grid_to_cell(j * self.grid_cols() + i)
+                if cell in row_cells:
+                    continue
+                right_bound = cell.grid % self.grid_cols() + cell.cols
+                if right_bound == i+1:
+                    row_cells.clear()
+                    break
+                row_cells.add(cell)
+            if len(row_cells) > 0:
+                break
+        for c in row_cells:
+            c.cols -= 1
+        #
         cells = []
         for row in self._table:
             for cell in row:
                 if cell != self._selected:
                     cells.append(cell)
-        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols())
+        grid_cols = self.grid_cols()
+        if len(row_cells) > 0:
+            grid_cols -= 1
+        self.draw_cell_array_(cells, self.grid_rows(), grid_cols)
 
     def merge_right(self):
         r1, c1 = divmod(self._selected.grid, self.grid_cols())
@@ -1835,12 +1857,34 @@ class TextTableBox(tk.Canvas):
             return
         self._selected.cols += right.cols
         self._selected.text = '%s\n%s' % (self._selected.text, right.text)
+        # check redundant column
+        col_start = self._selected.grid % self.grid_cols()
+        col_end = col_start + self._selected.cols
+        for i in range(col_start, col_end):
+            row_cells = set([self._selected])
+            for j in range(0, self.grid_rows()):
+                cell = self.grid_to_cell(j * self.grid_cols() + i)
+                if cell in row_cells:
+                    continue
+                right_bound = cell.grid % self.grid_cols() + cell.cols
+                if right_bound == i+1:
+                    row_cells.clear()
+                    break
+                row_cells.add(cell)
+            if len(row_cells) > 0:
+                break
+        for c in row_cells:
+            c.cols -= 1
+        #
         cells = []
         for row in self._table:
             for cell in row:
                 if cell != right:
                     cells.append(cell)
-        self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols())
+        grid_cols = self.grid_cols()
+        if len(row_cells) > 0:
+            grid_cols -= 1
+        self.draw_cell_array_(cells, self.grid_rows(), grid_cols)
 
     def split_horizontal(self):
         if self._selected.cols == 1:
