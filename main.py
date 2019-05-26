@@ -558,11 +558,13 @@ class OpenDocDlg(jtk.ModalDialog):
 
     def __init__(self, master, *a, **kw):
         self._store = kw.pop('database')
-        self._notes = []
+        self._notes = kw.pop('cache', [])
         self._curr = 0
         kw['title'] = 'Select Document to Open'
         jtk.ModalDialog.__init__(self, master, *a, **kw)
         self._sort_reverse = [False, False]
+        if len(self._notes) > 0:
+            self.jump_page_(0)
 
     def body(self, master):
         frm = tk.LabelFrame(master, text='Search by:')
@@ -612,7 +614,7 @@ class OpenDocDlg(jtk.ModalDialog):
         try:
             selected = self._note_list.selection()
             selected = [int(i) + self._curr * OpenDocDlg.PAGE_NUM for i in selected]
-            self.result = [self._notes[i] for i in selected]
+            self.result = selected, self._notes
         except:
             self.result = None
 
@@ -995,6 +997,7 @@ class MainApp(tk.Tk):
             tkMessageBox.showinfo(MainApp.TITLE, 'Please delete it in File Explorer')
             return
         self._store = jdb.NoteStore.create_db(filename)
+        del self._searches[:]
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
 
     def menu_database_open_(self):
@@ -1013,6 +1016,7 @@ class MainApp(tk.Tk):
         if not self.menu_database_close_():
             return
         self._store = jdb.NoteStore(filename)
+        del self._searches[:]
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
         self.title('[%s] %s' % (MainApp.TITLE, os.path.basename(filename)))
 
@@ -1047,11 +1051,12 @@ class MainApp(tk.Tk):
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
 
     def menu_doc_open_(self, evt=None):
-        dlg = OpenDocDlg(self, database=self._store)
+        dlg = OpenDocDlg(self, database=self._store, cache=self._searches)
         dlg.show()
         if dlg.result is None:
             return
-        for note in dlg.result:
+        indices, self._searches[:] = dlg.result
+        for note in [self._searches[i] for i in indices]:
             #
             # if it's already opened
             for e, n in self._notes.iteritems():
@@ -1154,6 +1159,7 @@ At the age of 40.
         self.protocol('WM_DELETE_WINDOW', self.quit_)
         self._store = None
         self._notes = {}  # each editor-tab corresponds to a note object
+        self._searches = []
         # lock several widgets until you open a database.
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
