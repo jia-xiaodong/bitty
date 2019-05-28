@@ -443,7 +443,7 @@ class LineNumberBar(tk.Canvas):
         """
         tk.Canvas.__init__(self, master, **kwargs)
         self._text = text
-        self._range = (-1, -1, -1)  # tuple(line_start, line_end, line_pos_y)
+        self._old = (None, -1, -1)  # tuple(line_start, line_end, line_pos)
         self.binding_keys_()
 
         # text should notify canvas when event is fired
@@ -468,9 +468,11 @@ class LineNumberBar(tk.Canvas):
             info = self._text.dlineinfo(idx)
         end = int(idx.split(".")[0]) - 1
         # if no change, don't redraw
-        if self._range == (start, end, positions[0]):
-            return
-        self._range = (start, end, positions[0])
+        if not self._old[0] is None and len(self._old[0]) == len(positions):
+            if self._old[1:] == (start, end):
+                if all(lambda i,j: i==j for i,j in zip(self._old[0], positions)):
+                    return
+        self._old = (positions, start, end)
         self.delete(tk.ALL)
         width = self.resize_width_(end)
         for line_num, y in enumerate(positions, start=end-len(positions)+1):
@@ -1250,6 +1252,7 @@ class ImageBox(tk.Canvas):
         self._scb = None  # trace-variable callback 'scale'
         tk.Canvas.__init__(self, master, *a, **kw)
         #
+        self.bind('<Map>', self.adjust_size_)
         self.bind('<Enter>', self.hud_on_)
         self.bind('<Leave>', self.hud_off_)
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
@@ -1372,6 +1375,12 @@ class ImageBox(tk.Canvas):
         if isinstance(w, TextEditor):
             w.on_modified()
 
+    def adjust_size_(self, evt):
+        min_width = self._hudw.winfo_reqwidth()
+        if self.winfo_width() < min_width+CANVAS_BIAS*2:
+            min_height = int(self._src.height * min_width / self._src.width)
+            self.config(width=min_width, height=min_height)
+
 
 class TextTableBox(tk.Canvas):
     class Cell:
@@ -1479,37 +1488,34 @@ class TextTableBox(tk.Canvas):
         turn a dictionary of specifications to an array of table cell objects.
         @param config: a dict, describing the table data and structure.
         """
-        try:
-            cells = []
-            matrix = [[] for i in range(len(config))]
-            grid_columns = 0
-            for i, row in enumerate(config):
-                row_data = []
-                j = 0  # grid index, starts from zero, ends when it reaches row's ending.
-                for cell in row:
-                    while j < len(matrix[i]) and matrix[i][j] == 1:
-                        j += 1
-                    t = cell.get('text', '')
-                    r = cell.get('rows', 1)
-                    c = cell.get('cols', 1)
-                    row_data.append(TextTableBox.Cell(i*grid_columns+j, t, r, c))
-                    #
-                    for m in range(i, i+r):
-                        for n in range(j, j+c):
-                            if n >= len(matrix[m]):
-                                matrix[m].extend([0] * (n-len(matrix[m])+1))
-                            matrix[m][n] = 1
-                    j += c
-                if grid_columns == 0:
-                    grid_columns = j
-                elif grid_columns != len(matrix[i]):
-                    raise ValueError("Table has wrong structure of row %s." % i)
-                cells.append(row_data)
-            #
-            self._table = cells
-            return len(cells), grid_columns
-        except Exception as e:
-            print(e)
+        cells = []
+        matrix = [[] for i in range(len(config))]
+        grid_columns = 0
+        for i, row in enumerate(config):
+            row_data = []
+            j = 0  # grid index, starts from zero, ends when it reaches row's ending.
+            for cell in row:
+                while j < len(matrix[i]) and matrix[i][j] == 1:
+                    j += 1
+                t = cell.get('text', '')
+                r = cell.get('rows', 1)
+                c = cell.get('cols', 1)
+                row_data.append(TextTableBox.Cell(i*grid_columns+j, t, r, c))
+                #
+                for m in range(i, i+r):
+                    for n in range(j, j+c):
+                        if n >= len(matrix[m]):
+                            matrix[m].extend([0] * (n-len(matrix[m])+1))
+                        matrix[m][n] = 1
+                j += c
+            if grid_columns == 0:
+                grid_columns = j
+            elif grid_columns != len(matrix[i]):
+                raise ValueError("Table has wrong structure of row %s." % i)
+            cells.append(row_data)
+        #
+        self._table = cells
+        return len(cells), grid_columns
 
     def dump(self):
         content = []

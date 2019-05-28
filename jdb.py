@@ -320,7 +320,7 @@ class NoteStore:
             words = conditions.pop('content', None)
             def contain_words(text):
                 content = NoteStore.unzip_(text)
-                return all(content.find(i)>0 for i in words)
+                return all(content.find(i) > -1 for i in words)
             if not words is None:
                 self._con.create_function('Contain', 1, contain_words)
                 clauses.append('Contain(text)')

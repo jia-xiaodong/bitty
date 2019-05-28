@@ -1056,18 +1056,19 @@ class MainApp(tk.Tk):
         if dlg.result is None:
             return
         indices, self._searches[:] = dlg.result
+        opened = {n:e for e, n in self._notes.iteritems()}
         for note in [self._searches[i] for i in indices]:
-            #
             # if it's already opened
-            for e, n in self._notes.iteritems():
-                if n.sn == note.sn:
-                    self._editor.switch_tab(e)
-                    continue
-            # if not open, open it
+            if note in opened:
+                self._editor.switch_tab(opened[note])
+                continue
+            # if not opened yet
             editor = self._editor.new_editor(note.title)
             self.config_core(editor)
             self._editor.switch_tab(editor)
             self.load_content_(editor, note)
+            editor.monitor_change()
+            self._notes[editor] = note
             #
             if self._editor.count() == 1:
                 self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
@@ -1136,6 +1137,7 @@ class MainApp(tk.Tk):
             if not tkMessageBox.askokcancel(MainApp.TITLE, 'Do you really want to delete it?'):
                 return
             self._store.delete_note(self._notes[editor].sn)
+            self._searches.remove(self._notes[editor])
             self._notes.pop(editor)
         finally:
             self._editor.remove(editor)
@@ -1437,23 +1439,27 @@ At the age of 40.
             table_windows = []
             if len(tables) > 0:
                 text = text.split('\n')
-                for i in tables:
-                    row = i['row']
-                    col = i['col']
-                    end = i['end']
-                    num = i['num']
-                    table_lines = []
-                    table_lines.append(text[row][col:])
-                    table_lines.extend(text[row+1:row+num-1])
-                    table_lines.append(text[row+num-1][0:end])
-                    specs = jtk.TextTableBox.set_spec_text(i['data'], table_lines)
-                    table = jtk.TextTableBox(core, table=specs, font=self._font)
-                    table_windows.append((table, '%d.%d' % (row+1, col)))
-                    # delete table text from content
-                    # question mark is a placeholder
-                    text[row] = '%s?%s' % (text[row][:col], text[row+num-1][end:])
-                    del text[row+1:row+num]
-                text = '\n'.join(text)
+                try:
+                    for i in tables:
+                        row = i['row']
+                        col = i['col']
+                        end = i['end']
+                        num = i['num']
+                        table_lines = []
+                        table_lines.append(text[row][col:])
+                        table_lines.extend(text[row+1:row+num-1])
+                        table_lines.append(text[row+num-1][0:end])
+                        specs = jtk.TextTableBox.set_spec_text(i['data'], table_lines)
+                        table = jtk.TextTableBox(core, table=specs, font=self._font)
+                        table_windows.append((table, '%d.%d' % (row+1, col)))
+                        # delete table text from content
+                        # question mark is a placeholder
+                        text[row] = '%s?%s' % (text[row][:col], text[row+num-1][end:])
+                        del text[row+1:row+num]
+                except Exception as e:
+                    print(e)
+                finally:
+                    text = '\n'.join(text)
             # 2. plain text
             core.insert(tk.END, text)
             for t, p in table_windows:
@@ -1489,13 +1495,12 @@ At the age of 40.
             for pos in idx.pop('sub', []):
                 pos = pos.split(' ')
                 core.tag_add('sub', *pos)
+            #
+            note.init_digest(text=text, spec=spec, bulk=bulk)
         except RuntimeError:
             print('bulk data cannot be extracted.')
         except Exception as e:
             print('Error: %s' % e)
-        editor.monitor_change()
-        note.init_digest(text=text, spec=spec, bulk=bulk)
-        self._notes[editor] = note
 
     def copy_from_clipboard_(self):
         editor = self._editor.active()
