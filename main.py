@@ -1130,6 +1130,7 @@ class MainApp(tk.Tk):
         self._notes.pop(editor, None)
         if self._editor.active() is None:
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
+            self._search.pack_forget()
 
     def menu_doc_delete_(self):
         editor = self._editor.active()
@@ -1217,10 +1218,7 @@ At the age of 40.
     def on_tab_switched_(self, evt):
         if self._search.winfo_ismapped():
             self._search.detach()
-            editor = self._editor.active()
-            if editor is None:
-                return
-            self._search.attach(editor.core())
+            self._search.attach(self._editor.active().core())
 
     def font_changed_(self):
         family = self._font_family.get()
