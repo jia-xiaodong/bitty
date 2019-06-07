@@ -1124,7 +1124,7 @@ class MainApp(tk.Tk):
 
     def menu_doc_close_(self):
         editor = self._editor.active()
-        if editor.modified():
+        if editor.modified() and tkMessageBox.askokcancel(MainApp.TITLE, 'Want to save before closing?'):
             self.save_(editor)
         self._editor.remove(editor)
         self._notes.pop(editor, None)

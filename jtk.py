@@ -1456,7 +1456,7 @@ class TextTableBox(tk.Canvas):
         self._edited = tk.Text(self, font=self._font)
         self._edited.bind('<Control-Return>', self.finish_edit_)
         self._edited.bind('<Escape>', self.hide_input_)
-        self.bind('<Leave>', self.hide_input_)
+        self.bind('<Leave>', self.finish_edit_)
         #
         self.bind('<2>', self.on_popup_menu_)
         self._menu = TextTableBox.Popup(self)
@@ -1566,6 +1566,8 @@ class TextTableBox(tk.Canvas):
         self._edited.focus_set()
 
     def finish_edit_(self, evt):
+        if not self._edited.winfo_ismapped():
+            return
         content = self._edited.get('1.0', tk.END)
         content = content.strip(' \n')
         self._selected.text = content
