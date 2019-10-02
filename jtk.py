@@ -524,14 +524,24 @@ class TextOperationSet:
                   'Redo']:           # Mod1-y, Ctrl-Lock-Y
             # About parameters of lambda expression:
             # e for event (but not necessary, only placeholder), i for immediate parameter passing
-            self._ops[i] = lambda e=None, i=i: self._txt.event_generate('<<%s>>' % i)
+            self._ops[i] = lambda e=None, i=i: self.complement_('<<%s>>' % i)
         #
         # bind capital key, too
         self._txt.bind('<Mod1-X>', self._ops['Cut'])
+        self._txt.bind('<Mod1-x>', self._ops['Cut'])
         self._txt.bind('<Mod1-C>', self._ops['Copy'])
+        self._txt.bind('<Mod1-c>', self._ops['Copy'])
         self._txt.bind('<Mod1-V>', self._ops['Paste'])
+        self._txt.bind('<Mod1-v>', self._ops['Paste'])
         self._txt.bind('<Mod1-Z>', self._ops['Undo'])
+        self._txt.bind('<Mod1-z>', self._ops['Undo'])
         self._txt.bind('<Mod1-Y>', self._ops['Redo'])
+        self._txt.bind('<Mod1-y>', self._ops['Redo'])
+
+    def complement_(self, op):
+        self._txt.event_generate(op)
+        self._txt.see(tk.INSERT)
+        return 'break'
 
     def default_ops_(self):
         """

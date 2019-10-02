@@ -1023,13 +1023,19 @@ class MainApp(tk.Tk):
     def menu_database_close_(self):
         if self._store is None:
             return True
-        for e in self._editor.iter_tabs():
-            if e.modified():
-                self.save_(e)
+        if any(e.modified() for e in self._editor.iter_tabs()):
+            choice = tkMessageBox.askyesnocancel(MainApp.TITLE, 'Wanna SAVE everything before closing database?')
+            if choice is None:  # cancel
+                return False
+            if choice is True:
+                for e in self._editor.iter_tabs():
+                    if e.modified():
+                        self.save_(e)
         self._editor.close_all()
         self._notes.clear()
         self._store.close()
         self._store = None
+        self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.title(MainApp.TITLE)
         return True
@@ -1124,8 +1130,12 @@ class MainApp(tk.Tk):
 
     def menu_doc_close_(self):
         editor = self._editor.active()
-        if editor.modified() and tkMessageBox.askokcancel(MainApp.TITLE, 'Want to save before closing?'):
-            self.save_(editor)
+        if editor.modified():
+            choice = tkMessageBox.askyesnocancel(MainApp.TITLE, 'Wanna SAVE changes before closing doc?')
+            if choice is None:  # cancel
+                return
+            if choice is True:
+                self.save_(editor)
         self._editor.remove(editor)
         self._notes.pop(editor, None)
         if self._editor.active() is None:
@@ -1337,12 +1347,15 @@ At the age of 40.
 
     def edit_insert_image_(self):
         extensions = tuple(Image.registered_extensions().keys())
-        filename = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)])
-        if filename is '':
+        filenames = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)], multiple=True)
+        if len(filenames) == 0:
             return
         editor = self._editor.active()
-        image = jtk.ImageBox(editor.core(), image=open(filename), ext=os.path.splitext(filename)[1])
-        editor.core().window_create(tk.INSERT, window=image)
+        core = editor.core()
+        for i, each in enumerate(filenames):
+            core.insert(tk.INSERT, '%d\n' % i)
+            image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
+            core.window_create(tk.INSERT, window=image)
         editor.on_modified()
 
     def edit_insert_table_(self):
