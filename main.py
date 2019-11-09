@@ -553,7 +553,7 @@ class NotePreview:
 class OpenDocDlg(jtk.ModalDialog):
     PAGE_NUM = 8
     """
-    @return an array when dialog's closed.
+    @return a tuple(array of serial number, array of RecordNote) when dialog's closed.
     """
 
     def __init__(self, master, *a, **kw):
@@ -1144,16 +1144,15 @@ class MainApp(tk.Tk):
 
     def menu_doc_delete_(self):
         editor = self._editor.active()
-        try:
-            if not tkMessageBox.askokcancel(MainApp.TITLE, 'Do you really want to delete it?'):
-                return
-            self._store.delete_note(self._notes[editor].sn)
-            self._searches.remove(self._notes[editor])
-            self._notes.pop(editor)
-        finally:
-            self._editor.remove(editor)
-            if self._editor.active() is None:
-                self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
+        if not tkMessageBox.askokcancel(MainApp.TITLE, 'Do you really want to delete it?'):
+            return
+        if editor in self._notes:
+            note = self._notes.pop(editor)
+            if self._store.delete_note(note.sn) and note in self._searches:
+                self._searches.remove(note)
+        self._editor.remove(editor)
+        if self._editor.active() is None:
+            self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
 
     def menu_help_about_(self):
         msg = '''
@@ -1172,7 +1171,7 @@ At the age of 40.
         self.protocol('WM_DELETE_WINDOW', self.quit_)
         self._store = None
         self._notes = {}  # each editor-tab corresponds to a note object
-        self._searches = []
+        self._searches = []  # array of RecordNote objects
         # lock several widgets until you open a database.
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
@@ -1353,7 +1352,7 @@ At the age of 40.
         editor = self._editor.active()
         core = editor.core()
         for i, each in enumerate(filenames):
-            core.insert(tk.INSERT, '%d\n' % i)
+            core.insert(tk.INSERT, '\n%d\n' % (i+1))
             image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
             core.window_create(tk.INSERT, window=image)
         editor.on_modified()
@@ -1516,16 +1515,15 @@ At the age of 40.
     def copy_from_clipboard_(self):
         editor = self._editor.active()
         content = editor.clipboard_get()
-        content = content.split('\r')
-        content = '\n'.join(content)
+        content = '\n'.join(content.splitlines())
         editor.core().insert(tk.INSERT, content)
         editor.core().see(tk.INSERT)
 
     def get_text(self, editor):
         text = editor.core()
-        content = text.get('1.0', tk.END+'-1c').split('\n')
-        # delete redundant space (line-end)
-        content = [i.rstrip(' ') for i in content]
+        content = text.get('1.0', tk.END).splitlines()
+        # delete redundant trailing spaces
+        content = [i.rstrip() for i in content]
         #
         # extract table text, put it to content,
         # so that it can be searched, too.
