@@ -470,7 +470,7 @@ class LineNumberBar(tk.Canvas):
         # if no change, don't redraw
         if not self._old[0] is None and len(self._old[0]) == len(positions):
             if self._old[1:] == (start, end):
-                if all(lambda i,j: i==j for i,j in zip(self._old[0], positions)):
+                if all(i==j for i,j in zip(self._old[0], positions)):
                     return
         self._old = (positions, start, end)
         self.delete(tk.ALL)
