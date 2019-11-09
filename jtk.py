@@ -1576,6 +1576,9 @@ class TextTableBox(tk.Canvas):
         self._edited.focus_set()
 
     def finish_edit_(self, evt):
+        # avoid conflict between Ctrl-Enter and <Leave> event
+        if not self._edited.winfo_ismapped():
+            return
         content = self._edited.get('1.0', tk.END)
         content = content.strip(' \n')
         self._selected.text = content
