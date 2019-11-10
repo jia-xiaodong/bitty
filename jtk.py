@@ -1543,7 +1543,7 @@ class TextTableBox(tk.Canvas):
         return formats, content
 
     def cell_size(self, cell):
-        i, j = divmod(cell.grid, len(self.grid_ws))
+        i, j = self.coord(cell.grid)
         h = sum(self.grid_hs[i:i+cell.rows])
         w = sum(self.grid_ws[j:j+cell.cols])
         return w, h
@@ -1553,6 +1553,9 @@ class TextTableBox(tk.Canvas):
 
     def grid_rows(self):
         return len(self.grid_hs)
+
+    def coord(self, grid_id):
+        return divmod(grid_id, self.grid_cols())
 
     @staticmethod
     def set_spec_text(specs, content):
@@ -1635,11 +1638,10 @@ class TextTableBox(tk.Canvas):
     def grid_to_cell(self, grid_id):
         for row in self._table:
             for cell in row:
-                row_id, col_id = divmod(cell.grid, self.grid_cols())
-                for i in range(row_id, row_id+cell.rows):
-                    start = i * self.grid_cols() + col_id
-                    if grid_id in range(start, start + cell.cols):
-                        return cell
+                r, c = self.coord(cell.grid)
+                cell_grids = (i*self.grid_cols()+j for i in range(r, r+cell.rows) for j in range(c, c+cell.cols))
+                if grid_id in cell_grids:
+                    return cell
         return None
 
     def add_row_up(self):
@@ -1742,11 +1744,11 @@ class TextTableBox(tk.Canvas):
         self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols()-1)
 
     def merge_up(self):
-        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        r1, c1 = self.coord(self._selected.grid)
         above = self.grid_to_cell(self.grid_cols()*(r1-1) + c1)
         if above is None:
             return
-        r2, c2 = divmod(above.grid, self.grid_cols())
+        r2, c2 = self.coord(above.grid)
         if c1 != c2:
             return
         if self._selected.cols != above.cols:
@@ -1783,11 +1785,11 @@ class TextTableBox(tk.Canvas):
         self.draw_cell_array_(cells, grid_rows, self.grid_cols())
 
     def merge_down(self):
-        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        r1, c1 = self.coord(self._selected.grid)
         below = self.grid_to_cell(self.grid_cols()*(r1+self._selected.rows) + c1)
         if below is None:
             return
-        r2, c2 = divmod(below.grid, self.grid_cols())
+        r2, c2 = self.coord(below.grid)
         if c1 != c2:
             return
         if self._selected.cols != below.cols:
@@ -1824,11 +1826,11 @@ class TextTableBox(tk.Canvas):
         self.draw_cell_array_(cells, grid_rows, self.grid_cols())
 
     def merge_left(self):
-        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        r1, c1 = self.coord(self._selected.grid)
         if c1 == 0:
             return
         left = self.grid_to_cell(self._selected.grid-1)
-        r2, c2 = divmod(left.grid, self.grid_cols())
+        r2, c2 = self.coord(left.grid)
         if r1 != r2:
             return
         if self._selected.rows != left.rows:
@@ -1865,11 +1867,11 @@ class TextTableBox(tk.Canvas):
         self.draw_cell_array_(cells, self.grid_rows(), grid_cols)
 
     def merge_right(self):
-        r1, c1 = divmod(self._selected.grid, self.grid_cols())
+        r1, c1 = self.coord(self._selected.grid)
         if c1 + self._selected.cols == self.grid_cols():
             return
-        right = self.grid_to_cell(self._selected.grid+1)
-        r2, c2 = divmod(right.grid, self.grid_cols())
+        right = self.grid_to_cell(self._selected.grid+self._selected.cols)
+        r2, c2 = self.coord(right.grid)
         if r1 != r2:
             return
         if self._selected.rows != right.rows:
@@ -1925,7 +1927,7 @@ class TextTableBox(tk.Canvas):
         for row in self._table:
             for cell in row:
                 if cell == self._selected:
-                    r, c = divmod(cell.grid, self.grid_cols())
+                    r, c = self.coord(cell.grid)
                     for i in range(r+1, r+cell.rows):
                         grid_idx = i * self.grid_cols() + c
                         cells.append(TextTableBox.Cell(grid_idx, cell.text, 1, cell.cols))
