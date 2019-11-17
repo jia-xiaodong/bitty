@@ -14,6 +14,7 @@ from sys import platform
 import json
 import io
 
+DATE_FORMAT = '%Y-%m-%d'  # e.g., 2019-03-18
 
 class TagPicker(tk.Frame):
     UNNAMED = '<Node>'
@@ -298,9 +299,11 @@ class DocPropertyDlg(jtk.ModalDialog):
         frm = tk.Frame(master)
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         tk.Label(frm, text='Edited:').pack(side=tk.LEFT)
-        lbl = tk.Label(frm, textvariable=self._date)
-        lbl.pack(side=tk.LEFT)
-        lbl.bind('<1>', self.change_date)
+        e = tk.Entry(frm, textvariable=self._date)
+        e.pack(side=tk.LEFT)
+        b = tk.Button(frm, text='...', command=self.change_date)
+        b.pack(side=tk.LEFT)
+        self._date.trace('w', self.date_changed_)
         #
         self._tag_picker = TagPicker(master, database=self._store, owned=self._record.tags[:])
         self._tag_picker.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
@@ -318,12 +321,22 @@ class DocPropertyDlg(jtk.ModalDialog):
             return False
         return True
 
-    def change_date(self, evt):
+    def change_date(self):
         dlg = jtk.CalendarDlg(self, date=self._record.date)
         dlg.show()
         if dlg.date != self._record.date:
             self._record.date = dlg.date
             self._date.set(str(dlg.date))
+
+    def date_changed_(self, name, index, mode):
+        try:
+            dt = self._date.get()
+            dt = datetime.datetime.strptime(dt, DATE_FORMAT)
+            dt = datetime.date(year=dt.year, month=dt.month, day=dt.day)
+            if dt != self._record.date:
+                self._record.date = dt
+        except ValueError:
+            pass
 
 
 class TagPickDlg(jtk.ModalDialog):
@@ -407,8 +420,6 @@ class ByDate(SearchCondition):
     """
     @return tuple(from, to), both 'from' and 'to' are date objects (or None, if not selected).
     """
-    DATE_FORMAT = '%Y-%m-%d'  # 2019-03-18
-
     def __init__(self, master, *a, **kw):
         SearchCondition.__init__(self, master, *a, **kw)
         #
@@ -442,7 +453,7 @@ class ByDate(SearchCondition):
         option = {}
         try:
             tm = var.get()
-            tm = datetime.datetime.strptime(tm, ByDate.DATE_FORMAT)
+            tm = datetime.datetime.strptime(tm, DATE_FORMAT)
             if jtk.CalendarDlg.YEAR_FROM <= tm.year <= jtk.CalendarDlg.YEAR_TO:
                 option['date'] = datetime.date(year=tm.year, month=tm.month, day=tm.day)
         except ValueError:
@@ -458,7 +469,7 @@ class ByDate(SearchCondition):
     def from_changed_(self, name, index, mode):
         try:
             tm = self._date_from.get()
-            tm = datetime.datetime.strptime(tm, ByDate.DATE_FORMAT)
+            tm = datetime.datetime.strptime(tm, DATE_FORMAT)
             self._from = datetime.date(year=tm.year, month=tm.month, day=tm.day)
             if not self._switch.get():
                 self._switch.set(1)
@@ -468,7 +479,7 @@ class ByDate(SearchCondition):
     def to_changed_(self, name, index, mode):
         try:
             tm = self._date_to.get()
-            tm = datetime.datetime.strptime(tm, ByDate.DATE_FORMAT)
+            tm = datetime.datetime.strptime(tm, DATE_FORMAT)
             self._to = datetime.date(year=tm.year, month=tm.month, day=tm.day)
             if not self._switch.get():
                 self._switch.set(1)
@@ -553,18 +564,20 @@ class NotePreview:
 class OpenDocDlg(jtk.ModalDialog):
     PAGE_NUM = 8
     """
-    @return a tuple(array of serial number, array of RecordNote) when dialog's closed.
+    @return a tuple(array of serial number, array of RecordNote, current page) when dialog's closed.
     """
 
     def __init__(self, master, *a, **kw):
         self._store = kw.pop('database')
         self._notes = kw.pop('cache', [])
+        last_page = kw.pop('page', 0)
         self._curr = 0
         kw['title'] = 'Select Document to Open'
         jtk.ModalDialog.__init__(self, master, *a, **kw)
         self._sort_reverse = [False, False]
+        # jump to the page of lastly opened time
         if len(self._notes) > 0:
-            self.jump_page_(0)
+            self.jump_page_(last_page)
 
     def body(self, master):
         frm = tk.LabelFrame(master, text='Search by:')
@@ -614,7 +627,7 @@ class OpenDocDlg(jtk.ModalDialog):
         try:
             selected = self._note_list.selection()
             selected = [int(i) + self._curr * OpenDocDlg.PAGE_NUM for i in selected]
-            self.result = selected, self._notes
+            self.result = selected, self._notes, self._curr
         except:
             self.result = None
 
@@ -1057,11 +1070,11 @@ class MainApp(tk.Tk):
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
 
     def menu_doc_open_(self, evt=None):
-        dlg = OpenDocDlg(self, database=self._store, cache=self._searches)
+        dlg = OpenDocDlg(self, database=self._store, cache=self._searches, page=self._nav_page)
         dlg.show()
         if dlg.result is None:
             return
-        indices, self._searches[:] = dlg.result
+        indices, self._searches[:], self._nav_page = dlg.result
         opened = {n:e for e, n in self._notes.iteritems()}
         for note in [self._searches[i] for i in indices]:
             # if it's already opened
@@ -1172,6 +1185,7 @@ At the age of 40.
         self._store = None
         self._notes = {}  # each editor-tab corresponds to a note object
         self._searches = []  # array of RecordNote objects
+        self._nav_page = 0
         # lock several widgets until you open a database.
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
