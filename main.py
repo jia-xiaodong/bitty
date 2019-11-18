@@ -301,6 +301,8 @@ class DocPropertyDlg(jtk.ModalDialog):
         tk.Label(frm, text='Edited:').pack(side=tk.LEFT)
         e = tk.Entry(frm, textvariable=self._date)
         e.pack(side=tk.LEFT)
+        self._indicator = tk.Label(frm, text='V', fg='dark green')
+        self._indicator.pack(side=tk.LEFT)
         b = tk.Button(frm, text='...', command=self.change_date)
         b.pack(side=tk.LEFT)
         self._date.trace('w', self.date_changed_)
@@ -327,6 +329,7 @@ class DocPropertyDlg(jtk.ModalDialog):
         if dlg.date != self._record.date:
             self._record.date = dlg.date
             self._date.set(str(dlg.date))
+        self.set_indicator_(True)
 
     def date_changed_(self, name, index, mode):
         try:
@@ -335,8 +338,17 @@ class DocPropertyDlg(jtk.ModalDialog):
             dt = datetime.date(year=dt.year, month=dt.month, day=dt.day)
             if dt != self._record.date:
                 self._record.date = dt
+            self.set_indicator_(True)
         except ValueError:
-            pass
+            self.set_indicator_(False)
+
+    def set_indicator_(self, passed):
+        if passed:
+            self._indicator['fg'] = 'dark green'
+            self._indicator['text'] = 'V'
+        else:
+            self._indicator['fg'] = 'red'
+            self._indicator['text'] = 'X'
 
 
 class TagPickDlg(jtk.ModalDialog):
@@ -562,22 +574,58 @@ class NotePreview:
 
 
 class OpenDocDlg(jtk.ModalDialog):
+    # 8 items per page
     PAGE_NUM = 8
+    # 2 sorting methods
+    SORT_BY_ID = 0
+    SORT_BY_DATE = 1
     """
-    @return a tuple(array of serial number, array of RecordNote, current page) when dialog's closed.
+    @return a tuple(array of serial number, array of RecordNote, current page)
     """
+
+    class QueryConfig(object):
+        def __init__(self):
+            self._hits = []
+            self._curr_page = 0
+            self._sort_states = [False, False]
+
+        @property
+        def hits(self):
+            return self._hits
+
+        @hits.setter
+        def hits(self, value):
+            self._hits[:] = value
+
+        @property
+        def page(self):
+            return self._curr_page
+
+        @page.setter
+        def page(self, value):
+            self._curr_page = value
+
+        def sort_state(self, index):
+            return self._sort_states[index]
+
+        def sort_switch(self, index):
+            self._sort_states[index] = not self._sort_states[index]
+
+        def clear(self):
+            del self._hits[:]
+            self._curr_page = 0
+            self._sort_states = [False, False]
 
     def __init__(self, master, *a, **kw):
         self._store = kw.pop('database')
-        self._notes = kw.pop('cache', [])
-        last_page = kw.pop('page', 0)
-        self._curr = 0
+        self._state = kw.pop('state', None)
+        if self._state is None:
+            self._state = OpenDocDlg.QueryConfig()
         kw['title'] = 'Select Document to Open'
         jtk.ModalDialog.__init__(self, master, *a, **kw)
-        self._sort_reverse = [False, False]
         # jump to the page of lastly opened time
-        if len(self._notes) > 0:
-            self.jump_page_(last_page)
+        if len(self._state.hits) > 0:
+            self.jump_page_(self._state.page)
 
     def body(self, master):
         frm = tk.LabelFrame(master, text='Search by:')
@@ -626,8 +674,8 @@ class OpenDocDlg(jtk.ModalDialog):
     def apply(self):
         try:
             selected = self._note_list.selection()
-            selected = [int(i) + self._curr * OpenDocDlg.PAGE_NUM for i in selected]
-            self.result = selected, self._notes, self._curr
+            selected = [int(i) + self._state.page * OpenDocDlg.PAGE_NUM for i in selected]
+            self.result = (selected, self._state)
         except:
             self.result = None
 
@@ -656,26 +704,26 @@ class OpenDocDlg(jtk.ModalDialog):
         self._note_list.delete(*self._note_list.get_children(''))
         start = n * OpenDocDlg.PAGE_NUM
         stop = start + OpenDocDlg.PAGE_NUM
-        for i, j in enumerate(self._notes[start:stop]):
+        for i, j in enumerate(self._state.hits[start:stop]):
             self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date])
-        if len(self._notes) > 0:
+        if len(self._state.hits) > 0:
             self._note_list.selection_set('0')  # automatically select the 1st one
             self._note_list.focus('0')          # give the 1st one focus (visually)
             self._note_list.focus_set()         # widget get focus to accept '<space>', '<Up>', '<Down>'
         #
         self._progress.set('%d / %d' % (n+1, self.pages_()))
-        self._curr = n
+        self._state.page = n
 
     def jump_next_(self, evt=None):
-        if self._curr+1 < self.pages_():
-            self.jump_page_(self._curr+1)
+        if self._state.page+1 < self.pages_():
+            self.jump_page_(self._state.page+1)
 
     def jump_prev_(self, evt=None):
-        if self._curr > 0:
-            self.jump_page_(self._curr-1)
+        if self._state.page > 0:
+            self.jump_page_(self._state.page-1)
 
     def pages_(self):
-        total = max(len(self._notes), 1)
+        total = max(len(self._state.hits), 1)
         return (total - 1) / OpenDocDlg.PAGE_NUM + 1
 
     def search_(self):
@@ -707,10 +755,10 @@ class OpenDocDlg(jtk.ModalDialog):
             if len(keywords) > 0:
                 conditions['content'] = keywords
         if len(conditions) == 0:
-            del self._notes[:]
+            self._state.clear()
         else:
-            self._notes[:] = self._store.filter_notes(**conditions)
-        jtk.MessageBubble(self._btn_search, '%d found' % len(self._notes))
+            self._state.hits = self._store.filter_notes(**conditions)
+        jtk.MessageBubble(self._btn_search, '%d found' % len(self._state.hits))
         self.jump_page_(0)
 
     def open_preview_(self, evt=None):
@@ -721,17 +769,17 @@ class OpenDocDlg(jtk.ModalDialog):
         if active == '':
             return
         index = self._note_list.index(active)
-        index += self._curr * OpenDocDlg.PAGE_NUM
-        NotePreview(self, database=self._store, note=self._notes[index])
+        index += self._state.page * OpenDocDlg.PAGE_NUM
+        NotePreview(self, database=self._store, note=self._state.hits[index])
 
     def sort_by_id_(self):
-        self._sort_reverse[0] = not self._sort_reverse[0]
-        self._notes.sort(key=lambda i: i.sn, reverse=self._sort_reverse[0])
+        self._state.sort_switch(OpenDocDlg.SORT_BY_ID)
+        self._state.hits.sort(key=lambda i: i.sn, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_ID))
         self.jump_page_(0)
 
     def sort_by_date_(self):
-        self._sort_reverse[1] = not self._sort_reverse[1]
-        self._notes.sort(key=lambda i: i.date, reverse=self._sort_reverse[1])
+        self._state.sort_switch(OpenDocDlg.SORT_BY_DATE)
+        self._state.hits.sort(key=lambda i: i.date, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE))
         self.jump_page_(0)
 
 
@@ -1010,7 +1058,7 @@ class MainApp(tk.Tk):
             tkMessageBox.showinfo(MainApp.TITLE, 'Please delete it in File Explorer')
             return
         self._store = jdb.NoteStore.create_db(filename)
-        del self._searches[:]
+        self._last_search = None
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
 
     def menu_database_open_(self):
@@ -1029,7 +1077,7 @@ class MainApp(tk.Tk):
         if not self.menu_database_close_():
             return
         self._store = jdb.NoteStore(filename)
-        del self._searches[:]
+        self._last_search = None
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
         self.title('[%s] %s' % (MainApp.TITLE, os.path.basename(filename)))
 
@@ -1070,13 +1118,13 @@ class MainApp(tk.Tk):
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
 
     def menu_doc_open_(self, evt=None):
-        dlg = OpenDocDlg(self, database=self._store, cache=self._searches, page=self._nav_page)
+        dlg = OpenDocDlg(self, database=self._store, state=self._last_search)
         dlg.show()
         if dlg.result is None:
             return
-        indices, self._searches[:], self._nav_page = dlg.result
+        indices, self._last_search = dlg.result
         opened = {n:e for e, n in self._notes.iteritems()}
-        for note in [self._searches[i] for i in indices]:
+        for note in [self._last_search.hits[i] for i in indices]:
             # if it's already opened
             if note in opened:
                 self._editor.switch_tab(opened[note])
@@ -1161,8 +1209,8 @@ class MainApp(tk.Tk):
             return
         if editor in self._notes:
             note = self._notes.pop(editor)
-            if self._store.delete_note(note.sn) and note in self._searches:
-                self._searches.remove(note)
+            if self._store.delete_note(note.sn) and note in self._last_search.hits:
+                self._last_search.hits.remove(note)
         self._editor.remove(editor)
         if self._editor.active() is None:
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
@@ -1184,8 +1232,7 @@ At the age of 40.
         self.protocol('WM_DELETE_WINDOW', self.quit_)
         self._store = None
         self._notes = {}  # each editor-tab corresponds to a note object
-        self._searches = []  # array of RecordNote objects
-        self._nav_page = 0
+        self._last_search = None
         # lock several widgets until you open a database.
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
