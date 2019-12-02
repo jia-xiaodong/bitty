@@ -140,8 +140,8 @@ class DBRecordDoc(object):
     def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0):
         self._sn = sn
         self._title = title
-        self._text = text
-        self._bulk = bulk  # possible values: None, bytes, 16-bytes md5 value
+        self._text = text  # json-format string
+        self._bulk = bulk  # possible values: None, bytes 
         self._tags = tags
         self._date = datetime.date.today() if date is None else date
         self._dirty_flags = set()

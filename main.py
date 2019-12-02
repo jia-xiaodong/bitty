@@ -930,14 +930,16 @@ class TipManager(object):
 
     def export_format(self, text):
         formats = []
-        tip_tags = [i for i in text.tag_names() if i.startswith(TipManager.prefix)]
-        tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
-        for t in tip_tags:
-            ranges = text.tag_ranges(t)
-            s = text.index(ranges[0])      # selection start
-            e = text.index(ranges[1])      # selection end
-            t = self.get_content(text, t)  # character number
-            formats.append(dict(start=s, end=e, text=t))
+        tip_tags = []
+        for i in text.tag_names():
+            if i.startswith(TipManager.prefix):
+                ranges = text.tag_ranges(i)
+                tip_tags.append((i, text.index(ranges[0]), text.index(ranges[1])))
+        # the purpose of sort is only one: digest comparison
+        tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1)
+        for t, s, e in tip_tags:
+            txt = self.get_content(text, t)
+            formats.append(dict(start=s, end=e, text=txt))
         return formats
 
     @staticmethod
