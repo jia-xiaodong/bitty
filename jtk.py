@@ -1243,14 +1243,22 @@ class SearchBar(tk.Frame):
             self._last = None
 
 
-class ImageBox(tk.Canvas):
+class StorageMixin:
+    """
+    @note: a pure interface for the widget that can be embedded in tk.Text.
+    """
+    def output(self):
+        return None
+
+
+class ImageBox(tk.Canvas, StorageMixin):
     def __init__(self, master, *a, **kw):
         """
         keyword arguments:
           image: file object. Required.
           ext: str, filename extension. Required.
           scale: integer, 0~100. Optional. 100 is default value.
-        @note: keep file object alive while ImageBox alive except you don't use 'dump' method
+        @note: keep file object alive while ImageBox alive except you don't use 'export_to_file' method
         """
         self._bak = kw.pop('image')
         self._ext = kw.pop('ext')
@@ -1288,7 +1296,7 @@ class ImageBox(tk.Canvas):
         row2 = tk.Frame(self._hudw)
         row2.pack(side=tk.TOP)
         tk.Scale(row2, orient=tk.HORIZONTAL, variable=self._scale, from_=1).pack(side=tk.LEFT)
-        tk.Button(row2, text='Export', command=self.dump).pack(side=tk.LEFT, anchor=tk.S)
+        tk.Button(row2, text='Export', command=self.export_to_file).pack(side=tk.LEFT, anchor=tk.S)
         self._hud = self.create_window(CANVAS_BIAS, CANVAS_BIAS, anchor=tk.NW, window=self._hudw, state=tk.HIDDEN)
         #
         self.display_()
@@ -1355,7 +1363,7 @@ class ImageBox(tk.Canvas):
         self._scale.trace_vdelete('w', self._scb)
         self._scb = None
 
-    def dump(self):
+    def export_to_file(self):
         filename = tkFileDialog.asksaveasfilename(defaultextension=self._ext)
         if filename == '':
             return
@@ -1363,7 +1371,7 @@ class ImageBox(tk.Canvas):
             self._bak.seek(0)
             fo.write(self._bak.read())
 
-    def get_data(self):
+    def output(self):
         self._bak.seek(0)
         return self._bak.read(), self._scale.get(), self._ext
 
@@ -1392,7 +1400,7 @@ class ImageBox(tk.Canvas):
             self.config(width=min_width, height=min_height)
 
 
-class TextTableBox(tk.Canvas):
+class TextTableBox(tk.Canvas, StorageMixin):
     class Cell:
         def __init__(self, grid_index, text, row_span=1, col_span=1):
             self.grid = grid_index
@@ -1408,6 +1416,14 @@ class TextTableBox(tk.Canvas):
 
         def to_dict(self):
             d = {"from": 0, "to": 0}
+            if self.rows > 1:
+                d["rows"] = self.rows
+            if self.cols > 1:
+                d["cols"] = self.cols
+            return d
+
+        def to_dict(self):
+            d = {"text": self.text}
             if self.rows > 1:
                 d["rows"] = self.rows
             if self.cols > 1:
@@ -1527,20 +1543,12 @@ class TextTableBox(tk.Canvas):
         self._table = cells
         return len(cells), grid_columns
 
-    def dump(self):
-        content = []
-        formats = []
+    def output(self):
+        specs = []
         for row in self._table:
-            row_format = []
-            for cell in row:
-                text = cell.text.split('\n')
-                spec = cell.to_dict()
-                spec['from'] = len(content)
-                content.extend(text)
-                spec['to'] = len(content)
-                row_format.append(spec)
-            formats.append(row_format)
-        return formats, content
+            row_config = [cell.to_dict() for cell in row]
+            specs.append(row_config)
+        return specs
 
     def cell_size(self, cell):
         i, j = self.coord(cell.grid)

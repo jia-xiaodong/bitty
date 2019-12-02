@@ -12,16 +12,20 @@ import zlib
 import hashlib
 
 
-NoteCols = jex.enum2('id', 'desc', 'text', 'spec', 'bulk', 'tags', 'date', 'COUNT')
+DocCols = jex.enum2('id', 'title', 'text', 'bulk', 'tags', 'date', 'COUNT')
 TagCols = jex.enum2('id', 'name', 'base', 'COUNT')
 
 
-class RecordTag(object):
-    def __init__(self, text, base=0, sn=0):
-        self._name = text
-        self._parent = base
-        self._children = []
-        self._sn = sn
+class DBRecordTag(object):
+    """
+    @note: represents a database record in table "tags". For the table's columns, refer
+           to the definition of enum "TagCols".
+    """
+    def __init__(self, name, base=0, sn=0):
+        self._name = name    # tag name
+        self._parent = base  # tags can be further divided into more detailed category,
+        self._children = []  # e.g., creatures can be animals, birds, fishes, bacteria.
+        self._sn = sn        # serial number
 
     @property
     def sn(self):
@@ -95,7 +99,7 @@ class RecordTag(object):
             if i.sn == tag.parent:
                 i.add_child(tag)
                 return True
-            if RecordTag.forest_organize(i.children, tag):
+            if DBRecordTag.forest_organize(i.children, tag):
                 return True
         return False
 
@@ -128,32 +132,33 @@ class RecordTag(object):
         return False
 
 
-class RecordNote(object):
-    def __init__(self, title, text=None, spec=None, bulk=None, tags=[], date=None, sn=0):
+class DBRecordDoc(object):
+    """
+    @note: represents a database record in table "docs". For the table's columns, refer
+           to the definition of enum "DocCols".
+    """
+    def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0):
         self._sn = sn
-        self._desc = title
+        self._title = title
         self._text = text
-        self._spec = spec
         self._bulk = bulk  # possible values: None, bytes, 16-bytes md5 value
         self._tags = tags
         self._date = datetime.date.today() if date is None else date
-        self._dirty = set()
+        self._dirty_flags = set()
         #
-        # file content / spec info / image data
-        # are large data.
-        # In order to save memory and decrease redundant database writing,
+        # textual content and images are large data. In order to save memory space,
         # use digests to judge if they're changed.
         self._digests = {}
 
     @property
     def title(self):
-        return self._desc
+        return self._title
 
     @title.setter
     def title(self, value):
-        if self._desc != value:
-            self._desc = value
-            self.mark_dirty_(NoteCols.desc)
+        if self._title != value:
+            self._title = value
+            self.mark_dirty_(DocCols.title)
 
     @property
     def script(self):
@@ -167,20 +172,7 @@ class RecordNote(object):
             return
         self._text = value
         self._digests.update(text=digest)
-        self.mark_dirty_(NoteCols.text)
-
-    @property
-    def format(self):
-        return self._spec
-
-    @format.setter
-    def format(self, value):
-        digest = hashlib.md5(value).digest()
-        if self._digests.get('spec', '') == digest:
-            return
-        self._spec = value
-        self._digests.update(spec=digest)
-        self.mark_dirty_(NoteCols.spec)
+        self.mark_dirty_(DocCols.text)
 
     @property
     def bulk(self):
@@ -193,7 +185,7 @@ class RecordNote(object):
             return
         self._bulk = value
         self._digests.update(bulk=digest)
-        self.mark_dirty_(NoteCols.bulk)
+        self.mark_dirty_(DocCols.bulk)
 
     @property
     def date(self):
@@ -202,7 +194,7 @@ class RecordNote(object):
     @date.setter
     def date(self, value):
         self._date = value
-        self.mark_dirty_(NoteCols.date)
+        self.mark_dirty_(DocCols.date)
 
     @property
     def tags(self):
@@ -215,7 +207,7 @@ class RecordNote(object):
         if new == old:
             return
         self._tags[:] = value
-        self.mark_dirty_(NoteCols.tags)
+        self.mark_dirty_(DocCols.tags)
 
     @staticmethod
     def tags_str(tags):
@@ -237,18 +229,17 @@ class RecordNote(object):
         return self._sn == 0
 
     def mark_dirty_(self, col):
-        self._dirty.add(col)
+        self._dirty_flags.add(col)
 
     def after_saving(self):
-        self._dirty.clear()
-        # to save memory, release them
+        self._dirty_flags.clear()
+        # release their memory, and only keep their digests
         self._text = None
         self._bulk = None
-        self._spec = None
 
     @property
     def unsaved_fields(self):
-        return self._dirty
+        return self._dirty_flags
 
     def init_digest(self, **kw):
         for k, v in kw.items():
@@ -257,12 +248,16 @@ class RecordNote(object):
             self._digests.update({k: hashlib.md5(v).digest()})
 
 
-class NoteStore:
+class DocBase(object):
+    """
+    @note Database class, which is storing all documents.
+    """
     date_support = {'detect_types': sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES}
+    find_words = None
 
     def __init__(self, filename):
         self._filename = filename
-        self._con = sqlite3.connect(filename, **NoteStore.date_support)
+        self._con = sqlite3.connect(filename, **DocBase.date_support)
         self._tags = self.load_all_tags()
 
     def read_plain(self, sn):
@@ -271,24 +266,24 @@ class NoteStore:
         """
         try:
             cur = self._con.cursor()
-            cur.execute('SELECT text FROM notes WHERE id=?', (sn,))
-            return NoteStore.unzip_(cur.fetchone()[0])
+            cur.execute('SELECT text FROM docs WHERE id=?', (sn,))
+            return DocBase.unzip_(cur.fetchone()[0])
         except Exception as e:
             print('Error on select: %s' % e)
 
     def read_rich(self, sn):
         """
-        @return: tuple(str, str, bytes)
+        @return: tuple(str, bytes)
         """
         try:
             cur = self._con.cursor()
-            cur.execute('SELECT text, spec, bulk FROM notes WHERE id=?', (sn,))
-            t, s, b = cur.fetchone()
-            return NoteStore.unzip_(t), NoteStore.unzip_(s), b
+            cur.execute('SELECT text, bulk FROM docs WHERE id=?', (sn,))
+            t, b = cur.fetchone()
+            return DocBase.unzip_(t), b
         except Exception as e:
             print('Error on select: %s' % e)
 
-    def filter_notes(self, **conditions):
+    def select_doc(self, **conditions):
         try:
             clauses = []
             condition = conditions.pop('title', None)
@@ -319,54 +314,51 @@ class NoteStore:
             # full-text search
             words = conditions.pop('content', None)
             def contain_words(text):
-                content = NoteStore.unzip_(text)
-                return all(content.find(i) > -1 for i in words)
+                content = DocBase.unzip_(text)
+                return DocBase.find_words(content, words)
             if not words is None:
                 self._con.create_function('Contain', 1, contain_words)
                 clauses.append('Contain(text)')
             # construct final SQL statement
-            sql = 'SELECT id,desc,tags,date FROM notes'
+            sql = 'SELECT id,title,tags,date FROM docs'
             if len(clauses) > 0:
                 sql = '%s WHERE %s' % (sql, ' AND '.join(clauses))
             cur = self._con.cursor()
             cur.execute(sql)
-            notes = []
-            for sn, de, tg, dt in cur.fetchall():
+            docs = []
+            for sn, tt, tg, dt in cur.fetchall():
                 tg = [] if tg == '' else [int(i) for i in tg.split(',')]
-                tg = [RecordTag.forest_find(self._tags, i) for i in tg]
+                tg = [DBRecordTag.forest_find(self._tags, i) for i in tg]
                 if not tags is None:
-                    if not any(RecordTag.forest_find(tags, i.sn) for i in tg):
+                    if not any(DBRecordTag.forest_find(tags, i.sn) for i in tg):
                         continue
-                notes.append(RecordNote(de, None, None, None, tg, dt, sn))
-            return notes
+                docs.append(DBRecordDoc(tt, None, None, tg, dt, sn))
+            return docs
         except Exception as e:
             print('Error on select: %s' % e)
 
-    def update_note(self, record):
+    def update_doc(self, record):
         args = {}
         cols = []
         for i in record.unsaved_fields:
-            if i == NoteCols.desc:
-                args['dsp'] = record.title
-                cols.append('desc=:dsp')
-            elif i == NoteCols.text:
-                args['txt'] = NoteStore.zip_(record.script)
+            if i == DocCols.title:
+                args['ttl'] = record.title
+                cols.append('title=:ttl')
+            elif i == DocCols.text:
+                args['txt'] = DocBase.zip_(record.script)
                 cols.append('text=:txt')
-            elif i == NoteCols.spec:
-                args['fmt'] = NoteStore.zip_(record.format)
-                cols.append('spec=:fmt')
-            elif i == NoteCols.bulk:
+            elif i == DocCols.bulk:
                 args['blk'] = sqlite3.Binary(record.bulk)
                 cols.append('bulk=:blk')
-            elif i == NoteCols.tags:
-                args['tgs'] = RecordNote.tags_str(record.tags)
+            elif i == DocCols.tags:
+                args['tgs'] = DBRecordDoc.tags_str(record.tags)
                 cols.append('tags=:tgs')
-            elif i == NoteCols.date:
+            elif i == DocCols.date:
                 args['dat'] = record.date
                 cols.append('date=:dat')
         try:
             if len(cols) > 0:
-                sql = 'UPDATE notes SET %s WHERE id=%d' % (', '.join(cols), record.sn)
+                sql = 'UPDATE docs SET %s WHERE id=%d' % (', '.join(cols), record.sn)
                 self._con.execute(sql, args)
                 self._con.commit()
         except Exception as e:
@@ -374,14 +366,13 @@ class NoteStore:
         finally:
             record.after_saving()
 
-    def insert_note(self, record):
+    def insert_doc(self, record):
         try:
-            sql = 'INSERT INTO notes (desc, text, spec, bulk, tags, date) VALUES(?,?,?,?,?,?)'
-            args = (record.title,                   # title
-                    NoteStore.zip_(record.script),  # content of text
-                    NoteStore.zip_(record.format),  # extra format info
-                    sqlite3.Binary(record.bulk),    # images
-                    RecordNote.tags_str(record.tags),
+            sql = 'INSERT INTO docs (title, text, bulk, tags, date) VALUES(?,?,?,?,?)'
+            args = (record.title,                 # title
+                    DocBase.zip_(record.script),  # main text
+                    sqlite3.Binary(record.bulk),  # images
+                    DBRecordDoc.tags_str(record.tags),
                     record.date)
             cur = self._con.cursor()
             cur.execute(sql, args)
@@ -391,9 +382,9 @@ class NoteStore:
         except Exception as e:
             print('Error on insertion: %s' % e)
 
-    def delete_note(self, sn):
+    def delete_doc(self, sn):
         try:
-            self._con.execute('DELETE FROM notes WHERE id=?', (sn,))
+            self._con.execute('DELETE FROM docs WHERE id=?', (sn,))
             self._con.commit()
             return True
         except Exception as e:
@@ -408,12 +399,12 @@ class NoteStore:
         try:
             cur = self._con.cursor()
             cur.execute('SELECT * FROM tags')
-            tags = [RecordTag(n, b, s) for s, n, b in cur.fetchall()]
+            tags = [DBRecordTag(n, b, s) for s, n, b in cur.fetchall()]
             root = 0
             for tag in tags[:]:
                 if tag.parent == 0:
                     root += 1
-                elif RecordTag.forest_organize(tags, tag):
+                elif DBRecordTag.forest_organize(tags, tag):
                     tags.remove(tag)
             if root != len(tags):
                 raise Exception('Error: dangling node: %s found. Program has bugs!' % (len(tags)-root))
@@ -463,7 +454,7 @@ class NoteStore:
         try:
             self._con.create_function('InUse', 1, in_use)
             cur = self._con.cursor()
-            cur.execute('SELECT COUNT(id) from notes WHERE InUse(tags)')
+            cur.execute('SELECT COUNT(id) from docs WHERE InUse(tags)')
             num, = cur.fetchone()
             return num
         except Exception as e:
@@ -483,7 +474,7 @@ class NoteStore:
         try:
             with sqlite3.connect(filename) as con:
                 cur = con.cursor()
-                tables = {'notes': [NoteCols.name[i] for i in range(NoteCols.COUNT)],
+                tables = {'docs': [DocCols.name[i] for i in range(DocCols.COUNT)],
                           'tags': [TagCols.name[i] for i in range(TagCols.COUNT)]}
                 return all(is_column_identical(cur, i, j) for i, j in tables.items())
         except:
@@ -492,23 +483,22 @@ class NoteStore:
     @staticmethod
     def create_db(filename):
         try:
-            sql = '''CREATE TABLE notes (
-                id   INTEGER PRIMARY KEY UNIQUE NOT NULL,
-                desc TEXT    NOT NULL,
-                text BLOB,
-                spec BLOB,
-                bulk BLOB,
-                tags TEXT,
-                date DATE);
+            sql = '''CREATE TABLE docs (
+                id    INTEGER PRIMARY KEY UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                text  BLOB,
+                bulk  BLOB,
+                tags  TEXT,
+                date  DATE);
                 CREATE TABLE tags (
-                id   INTEGER PRIMARY KEY UNIQUE NOT NULL,
-                name TEXT,
-                base INTEGER DEFAULT (0));'''
-            con = sqlite3.connect(filename, **NoteStore.date_support)
+                id    INTEGER PRIMARY KEY UNIQUE NOT NULL,
+                name  TEXT,
+                base  INTEGER DEFAULT (0));'''
+            con = sqlite3.connect(filename, **DocBase.date_support)
             con.executescript(sql)
             con.commit()
             #
-            return NoteStore(filename)
+            return DocBase(filename)
         except Exception as e:
             print('Error on creation of DB: %s' % e)
             return None
@@ -526,3 +516,7 @@ class NoteStore:
             return ''
         s = zlib.decompress(s)
         return s.decode(encoding='utf-8')
+
+    @staticmethod
+    def assign_finder(function):
+        DocBase.find_words = function

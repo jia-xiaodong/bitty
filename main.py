@@ -16,6 +16,7 @@ import io
 
 DATE_FORMAT = '%Y-%m-%d'  # e.g., 2019-03-18
 
+
 class TagPicker(tk.Frame):
     UNNAMED = '<Node>'
     QUERY_TIP = '<Here is the keyword for query>'
@@ -55,9 +56,9 @@ class TagPicker(tk.Frame):
     def __init__(self, master, *a, **kw):
         """
         @param kw: supports
-            1. database: NoteStore object
-            2. owned: array of RecordTag objects (optional)
-        @return .get_selection(): array of RecordTag objects
+            1. database: DocBase object
+            2. owned: array of DBRecordTag objects (optional)
+        @return .get_selection(): array of DBRecordTag objects
         """
         self._store = kw.pop('database')
         self._tags = self._store.get_all_tags()
@@ -179,7 +180,7 @@ class TagPicker(tk.Frame):
             self.draw_tags_(iid, i)
 
     def add_root_(self):
-        tag = jdb.RecordTag(TagPicker.UNNAMED)
+        tag = jdb.DBRecordTag(TagPicker.UNNAMED)
         self._store.insert_tag(tag)
         self._tags.append(tag)
         iid = self._tree.insert('', tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
@@ -191,15 +192,15 @@ class TagPicker(tk.Frame):
         if self._store.check_use(tag) > 0:
             tkMessageBox.showerror(MainApp.TITLE, '%s\nis in use\nand cannot be removed.' % tag.name)
             return
-        jdb.RecordTag.forest_delete(self._tags, tag)
+        jdb.DBRecordTag.forest_delete(self._tags, tag)
         self._store.delete_tag(tag)
         self._tree.delete(iid)
 
     def add_child_(self):
         iid = self._tree.focus()
         selected_tag = self.tag_from_node_(iid)
-        tag = jdb.RecordTag(TagPicker.UNNAMED, selected_tag.sn)
-        jdb.RecordTag.forest_add(self._tags, tag)
+        tag = jdb.DBRecordTag(TagPicker.UNNAMED, selected_tag.sn)
+        jdb.DBRecordTag.forest_add(self._tags, tag)
         self._store.insert_tag(tag)
         selected_tag.add_child(tag)
         child = self._tree.insert(iid, tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
@@ -231,11 +232,11 @@ class TagPicker(tk.Frame):
 
     def tag_from_node_(self, iid):
         """
-        @return RecordTag object
+        @return DBRecordTag object
         """
         sn = self._tree.item(iid, 'values')
         sn = int(sn[0])
-        return jdb.RecordTag.forest_find(self._tags, sn)
+        return jdb.DBRecordTag.forest_find(self._tags, sn)
 
     def get_selection(self):
         return self._selected
@@ -249,13 +250,13 @@ class TagPicker(tk.Frame):
         self._tree.move(self._moved_node, parent, len(self._tree.get_children(parent)))
         # 2. data structure
         moved = self.tag_from_node_(self._moved_node)
-        jdb.RecordTag.forest_delete(self._tags, moved)
+        jdb.DBRecordTag.forest_delete(self._tags, moved)
         if parent == '':
             moved.parent = 0
         else:
             parent = self._tree.item(parent, 'values')
             moved.parent = int(parent[0])
-        jdb.RecordTag.forest_add(self._tags, moved)
+        jdb.DBRecordTag.forest_add(self._tags, moved)
         # 3. database
         self._store.update_tag(moved)
         # 4. misc
@@ -278,8 +279,8 @@ class DocPropertyDlg(jtk.ModalDialog):
     def __init__(self, master, *a, **kw):
         """
         keyword parameters:
-          1. database: NoteStore object. Required.
-          2. record: RecordNote object. Required
+          1. database: DocBase object. Required.
+          2. record: DBRecordDoc object. Required
         @return True if something is changed.
         """
         self._store = kw.pop('database')
@@ -399,7 +400,7 @@ class ByTitle(SearchCondition):
 
 class ByTags(SearchCondition):
     """
-    @return an array of RecordTag objects.
+    @return an array of DBRecordTag objects.
         If nothing selected, return [] (aka. empty array)
     """
     def __init__(self, master, *a, **kw):
@@ -580,7 +581,7 @@ class OpenDocDlg(jtk.ModalDialog):
     SORT_BY_ID = 0
     SORT_BY_DATE = 1
     """
-    @return a tuple(array of serial number, array of RecordNote, current page)
+    @return a tuple(array of serial number, array of DBRecordDoc, current page)
     """
 
     class QueryConfig(object):
@@ -757,7 +758,7 @@ class OpenDocDlg(jtk.ModalDialog):
         if len(conditions) == 0:
             self._state.clear()
         else:
-            self._state.hits = self._store.filter_notes(**conditions)
+            self._state.hits = self._store.select_doc(**conditions)
         jtk.MessageBubble(self._btn_search, '%d found' % len(self._state.hits))
         self.jump_page_(0)
 
@@ -831,6 +832,7 @@ class RelyItem:
     def __init__(self, w, evt, caveat=-1):
         """
         @param w is Tkinter widget, could be menu or button
+        @note: if w is a menu, then caveat is the index of its sub-menu item.
         """
         self._w = w
         self._c = caveat
@@ -842,11 +844,143 @@ class RelyItem:
             self._w.config(state=state)
 
 
+class TipManager(object):
+    prefix = 'tip_'
+
+    def __init__(self):
+        self._tips = {}
+        self._wnd = None
+
+    def insert(self, text, content, start, end, sn=None):
+        """
+        @param text: tk.Text control
+        @param content: string of text
+        @param sn: if is None, assigned as ID automatically
+        """
+        if text not in self._tips:
+            self._tips[text] = {}
+        if sn is None:
+            sn = self.free_index_(text)
+        self._tips[text][sn] = content
+        name = '%s%d' % (TipManager.prefix, sn)
+        text.tag_add(name, start, end)
+        text.tag_config(name, background='gray92')  # the bigger number, the lighter gray color
+        text.tag_bind(name, '<Enter>', lambda evt, t=text, s=sn: self.schedule_(t, s))
+        text.tag_bind(name, '<Leave>', self.unschedule_)
+
+    def free_index_(self, text):
+        """
+        @return a free index.
+        @note: it clears unused strings of text.
+        """
+        tip_tags = [i for i in text.tag_names() if i.startswith(TipManager.prefix)]
+        keys = [TipManager.sn_from_tag(i) for i in tip_tags]
+        # clear unused strings
+        unused = [i for i in self._tips[text].iterkeys() if i not in keys]
+        for i in unused:
+            del self._tips[text][i]
+        # find the smallest index free to use
+        for i, sn in enumerate(self._tips[text].keys()):
+            if i < sn:
+                return i
+        return len(self._tips[text].keys())
+
+    def includes(self, text, index1, index2):
+        tip_tags = [i for i in text.tag_names() if i.startswith(TipManager.prefix)]
+        hits = []
+        for i in tip_tags:
+            range = text.tag_ranges(i)
+            if text.compare(range[1], '<', index1):
+                continue
+            if text.compare(range[0], '>', index2):
+                continue
+            hits.append((i, range[0], range[1]))
+        return hits
+
+    def schedule_(self, text, sn):
+        self._wnd = tk.Toplevel(text)
+        self._wnd.wm_overrideredirect(True)  # remove window title bar
+        label = tk.Label(self._wnd, text=self._tips[text][sn], justify=tk.LEFT, bg='yellow')
+        label.pack(ipadx=5)
+        rx, ry = text.winfo_rootx(), text.winfo_rooty()
+        x, y, _, _ = text.bbox(tk.CURRENT)
+        w, h = label.winfo_reqwidth(), label.winfo_reqheight()
+        self._wnd.wm_geometry("+%d+%d" % (rx+x-w/2, ry+y-h))
+
+    def unschedule_(self, evt=None):
+        if self._wnd is None:
+            return
+        self._wnd.destroy()
+        self._wnd = None
+
+    def remove(self, text, name):
+        text.tag_unbind(name, '<Enter>')
+        text.tag_unbind(name, '<Leave>')
+        text.tag_delete(name)
+        sn = TipManager.sn_from_tag(name)
+        del self._tips[text][sn]
+
+    def get_content(self, text, name):
+        sn = TipManager.sn_from_tag(name)
+        return self._tips[text][sn]
+
+    def update(self, text, name, content):
+        sn = TipManager.sn_from_tag(name)
+        self._tips[text][sn] = content
+
+    def export_format(self, text):
+        formats = []
+        tip_tags = [i for i in text.tag_names() if i.startswith(TipManager.prefix)]
+        tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
+        for t in tip_tags:
+            ranges = text.tag_ranges(t)
+            s = text.index(ranges[0])      # selection start
+            e = text.index(ranges[1])      # selection end
+            t = self.get_content(text, t)  # character number
+            formats.append(dict(start=s, end=e, text=t))
+        return formats
+
+    @staticmethod
+    def sn_from_tag(name):
+        return int(name[len(TipManager.prefix):])
+
+
+class TipEditDlg(jtk.ModalDialog):
+    _placeholder = '<Place something helpful here>'
+
+    def __init__(self, master, *a, **kw):
+        """
+        keyword parameters:
+        @return True if something is changed.
+        """
+        self._sel = kw.pop('sel')
+        self._tip = kw.pop('tip', TipEditDlg._placeholder)
+        #
+        kw['title'] = 'Edit a Tip'
+        jtk.ModalDialog.__init__(self, master, *a, **kw)
+
+    def body(self, master):
+        tk.Label(master, text=self._sel).pack(side=tk.TOP, fill=tk.X, expand=tk.YES)
+        self._text = tk.Text(master, width=80, height=4)
+        self._text.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        self._text.insert('1.0', self._tip)
+        self._text.tag_add(tk.SEL, '1.0', tk.END)
+        return self._text
+
+    def apply(self):
+        content = self._text.get('1.0', tk.END)
+        self.result = content.strip()
+
+    def validate(self):
+        content = self._text.get('1.0', tk.END)
+        return content.strip() != TipEditDlg._placeholder
+
+
 class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
     #
-    SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2, FailSpecs=3)
+    SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2)
     # All text editors are using same font
     DEFAULT_FONT = 'Helvetica' if platform == 'darwin' else 'Courier'
     DEFAULT_SIZE = 18
@@ -870,7 +1004,7 @@ class MainApp(tk.Tk):
         menu.add_command(label='New', command=self.menu_database_new_)
         menu.add_command(label='Open', command=self.menu_database_open_)
         menu.add_command(label='Close', command=self.menu_database_close_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 2)  # 2 is menu index
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 2)  # 2 is the index of menu 'Close'
         menu.add_separator()
         menu.add_command(label='Quit', command=self.quit_)
         menu_bar.add_cascade(label='Database', menu=menu)
@@ -898,6 +1032,8 @@ class MainApp(tk.Tk):
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 1)
         menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 2)
+        menu.add_command(label='Attach a Tip', command=self.edit_a_tip_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 3)
         menu_bar.add_cascade(label='Edit', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 2)
         # help
@@ -1057,9 +1193,10 @@ class MainApp(tk.Tk):
         if os.path.exists(filename):
             tkMessageBox.showinfo(MainApp.TITLE, 'Please delete it in File Explorer')
             return
-        self._store = jdb.NoteStore.create_db(filename)
+        self._store = jdb.DocBase.create_db(filename)
         self._last_search = None
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
+        self.title('[%s] %s' % (MainApp.TITLE, os.path.basename(filename)))
 
     def menu_database_open_(self):
         option = {'filetypes': [('SQLite3 File', ('*.db3', '*.s3db', '*.sqlite3', '*.sl3')),
@@ -1071,12 +1208,12 @@ class MainApp(tk.Tk):
         if self._store is not None and self._store.source == filename:
             return
         # if unknown database, ignore
-        if not jdb.NoteStore.validate(filename):
+        if not jdb.DocBase.validate(filename):
             tkMessageBox.showerror(MainApp.TITLE, 'Wrong database format')
             return
         if not self.menu_database_close_():
             return
-        self._store = jdb.NoteStore(filename)
+        self._store = jdb.DocBase(filename)
         self._last_search = None
         self.event_generate(MainApp.EVENT_DB_EXIST, state=1)
         self.title('[%s] %s' % (MainApp.TITLE, os.path.basename(filename)))
@@ -1152,7 +1289,7 @@ class MainApp(tk.Tk):
             record = self._notes[editor]
         except KeyError:
             title = self._editor.get_caption(editor)
-            record = jdb.RecordNote(title)
+            record = jdb.DBRecordDoc(title)
         #
         # specify tags / title / date
         if MainApp.unnamed(record.title) or len(record.tags) == 0:
@@ -1163,28 +1300,21 @@ class MainApp(tk.Tk):
             if MainApp.SAVE.FailTitle not in errors:
                 self._editor.set_caption(editor, record.title)
         #
-        # format-related misc
-        specs, record.bulk = self.collect_misc_(editor.core())
-        # if len(record.format) == 0     <-- Wrong!
-        # Because record.format could be None if its hash isn't changed.
-        if len(specs) == 0:
-            errors.add(MainApp.SAVE.FailSpecs)
-        record.format = specs
-        #
-        content = self.get_text(editor)
-        if content == '':
+        textual, binary = self.collect_content_(editor.core())
+        if len(textual) == 0:
             errors.add(MainApp.SAVE.FailContent)
         #
-        # if no content, no format, we discard it.
-        if MainApp.SAVE.FailContent in errors and MainApp.SAVE.FailSpecs in errors:
+        if MainApp.SAVE.FailContent in errors:
             return errors
-        # save to database
-        record.script = content
+        #
+        # save everything to database
+        record.bulk = binary
+        record.script = json.dumps(textual)
         if record.fragile:
-            self._store.insert_note(record)
+            self._store.insert_doc(record)
             self._notes[editor] = record
         else:
-            self._store.update_note(record)
+            self._store.update_doc(record)
         editor.on_saved()
         errors.add(MainApp.SAVE.Finish)
         return errors
@@ -1209,7 +1339,7 @@ class MainApp(tk.Tk):
             return
         if editor in self._notes:
             note = self._notes.pop(editor)
-            if self._store.delete_note(note.sn) and note in self._last_search.hits:
+            if self._store.delete_doc(note.sn) and note in self._last_search.hits:
                 self._last_search.hits.remove(note)
         self._editor.remove(editor)
         if self._editor.active() is None:
@@ -1220,7 +1350,8 @@ class MainApp(tk.Tk):
 It's an Electrical Diary app.
 You can record everything in life at will.
 
-Chinese saying: rotten pencil surpasses smart head. It's more and more obvious when you get aged.
+Chinese saying: rotten pencil surpasses smart head.
+It's more and more obvious when I get aged.
 
 Finished by "Jia xiao dong" on Apr 21, 2019,
 At the age of 40.
@@ -1233,6 +1364,7 @@ At the age of 40.
         self._store = None
         self._notes = {}  # each editor-tab corresponds to a note object
         self._last_search = None
+        self._tip_mgr = TipManager()
         # lock several widgets until you open a database.
         self.event_generate(MainApp.EVENT_DB_EXIST, state=0)
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
@@ -1245,6 +1377,8 @@ At the age of 40.
         self.bind_class('Entry', '<Mod1-C>', EntryOps.copy)
         self.bind_class('Entry', '<Mod1-X>', EntryOps.cut)
         self.bind_class('Entry', '<Mod1-V>', EntryOps.paste)
+        #
+        jdb.DocBase.assign_finder(self.find_words)
 
     def menu_doc_attr_(self):
         editor = self._editor.active()
@@ -1252,7 +1386,7 @@ At the age of 40.
             record = self._notes[editor]
         except KeyError:
             title = self._editor.get_caption(editor)
-            record = jdb.RecordNote(title)
+            record = jdb.DBRecordDoc(title)
         #
         dlg = DocPropertyDlg(self, database=self._store, record=record)
         dlg.show()
@@ -1407,15 +1541,19 @@ At the age of 40.
 
     def edit_insert_image_(self):
         extensions = tuple(Image.registered_extensions().keys())
-        filenames = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)], multiple=True)
-        if len(filenames) == 0:
+        images = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)], multiple=True)
+        if len(images) == 0:
             return
         editor = self._editor.active()
         core = editor.core()
-        for i, each in enumerate(filenames):
-            core.insert(tk.INSERT, '\n%d\n' % (i+1))
-            image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
+        if len(images) == 1:
+            image = jtk.ImageBox(core, image=open(images[0]), ext=os.path.splitext(images[0])[1])
             core.window_create(tk.INSERT, window=image)
+        else:
+            for i, each in enumerate(images):
+                core.insert(tk.INSERT, '\n%d\n' % (i+1))
+                image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
+                core.window_create(tk.INSERT, window=image)
         editor.on_modified()
 
     def edit_insert_table_(self):
@@ -1433,63 +1571,8 @@ At the age of 40.
             editor.on_modified()
 
     def doc_export_html_(self):
+        # TODO: export one doc to HTML
         pass
-
-    def collect_misc_(self, text):
-        """
-        @return tuple(json, bytes). Either could be '' (empty str).
-        """
-        windows = text.window_names()
-        if len(windows) > 0 and isinstance(windows[0], basestring):
-            windows = map(text.nametowidget, windows)
-            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
-        # 1. sum up all images
-        buf = io.BytesIO()
-        jfp = jex.FilePile(buf, 'w')
-        images = []
-        for i, w in enumerate([w for w in windows if isinstance(w, jtk.ImageBox)]):
-            pos = text.index(w)
-            data, scale, ext = w.get_data()
-            image_name = '%s%s' % (i, ext)
-            jfp.append(image_name, data)
-            images.append(dict(name=image_name, pos=pos, scale=scale))
-        jfp.close()
-        root = {}
-        if len(images) > 0:
-            root["image"] = images
-            bulk = buf.getvalue()
-        else:
-            bulk = ''
-        # 2. sum up all underlines
-        it = iter(text.tag_ranges('underline'))
-        underlines = ['%s %s' % (str(s), str(next(it))) for s in it]
-        if len(underlines) > 0:
-            root["underline"] = underlines
-        # 3. sum up list
-        it = iter(text.tag_ranges('list'))
-        lists = ['%s %s' % (str(s), str(next(it))) for s in it]
-        if len(lists) > 0:
-            root['list'] = lists
-        # 4. sum up superscription
-        it = iter(text.tag_ranges('sup'))
-        sups = ['%s %s' % (str(s), str(next(it))) for s in it]
-        if len(sups) > 0:
-            root['sup'] = sups
-        # 5. sum up subscription
-        it = iter(text.tag_ranges('sub'))
-        subs = ['%s %s' % (str(s), str(next(it))) for s in it]
-        if len(subs) > 0:
-            root['sub'] = subs
-        # 6. tables
-        tables = []
-        for w in [w for w in windows if isinstance(w, jtk.TextTableBox)]:
-            data, lines = w.dump()
-            row, col = text.index(w).split('.')
-            tables.append(dict(row=int(row)-1, col=int(col), end=len(lines[-1]), data=data, num=len(lines)))
-        if len(tables) > 0:
-            root['table'] = tables
-        idx = '' if len(root) == 0 else json.dumps(root)
-        return idx, bulk
 
     def config_core(self, editor):
         text = editor.core()
@@ -1500,79 +1583,6 @@ At the age of 40.
         text.tag_config('sup', offset=height/3)
         text.tag_config('sub', offset=-height/3)
 
-    def load_content_(self, editor, note):
-        try:
-            text, spec, bulk = self._store.read_rich(note.sn)
-            core = editor.core()
-            idx = json.loads(spec) if len(spec) > 0 else {}
-            # 1. table
-            tables = idx.pop('table', [])
-            table_windows = []
-            if len(tables) > 0:
-                text = text.split('\n')
-                try:
-                    for i in tables:
-                        row = i['row']
-                        col = i['col']
-                        end = i['end']
-                        num = i['num']
-                        table_lines = []
-                        table_lines.append(text[row][col:])
-                        table_lines.extend(text[row+1:row+num-1])
-                        table_lines.append(text[row+num-1][0:end])
-                        specs = jtk.TextTableBox.set_spec_text(i['data'], table_lines)
-                        table = jtk.TextTableBox(core, table=specs, font=self._font)
-                        table_windows.append((table, '%d.%d' % (row+1, col)))
-                        # delete table text from content
-                        # question mark is a placeholder
-                        text[row] = '%s?%s' % (text[row][:col], text[row+num-1][end:])
-                        del text[row+1:row+num]
-                except Exception as e:
-                    print(e)
-                finally:
-                    text = '\n'.join(text)
-            # 2. plain text
-            core.insert(tk.END, text)
-            for t, p in table_windows:
-                core.delete(p)
-                core.window_create(p, window=t)
-            # 3. images
-            images = idx.pop('image', [])
-            if len(images) > 0:
-                jfp = jex.FilePile(io.BytesIO(bulk))
-                for i in images:
-                    try:
-                        fd = jfp.open(i['name'])
-                        ext = os.path.splitext(i['name'])[1]
-                        image = jtk.ImageBox(core, image=io.BytesIO(fd.read()), scale=i['scale'], ext=ext)
-                        core.window_create(i['pos'], window=image)
-                        fd.close()
-                    except Exception as e:
-                        core.insert(i['pos'], '?')  # a placeholder
-                jfp.close()
-            # 4. underline
-            for pos in idx.pop('underline', []):
-                pos = pos.split(' ')
-                core.tag_add('underline', *pos)
-            # 5. list
-            for pos in idx.pop('list', []):
-                pos = pos.split(' ')
-                core.tag_add('list', *pos)
-            # 6. superscription
-            for pos in idx.pop('sup', []):
-                pos = pos.split(' ')
-                core.tag_add('sup', *pos)
-            # 7. subscription
-            for pos in idx.pop('sub', []):
-                pos = pos.split(' ')
-                core.tag_add('sub', *pos)
-            #
-            note.init_digest(text=text, spec=spec, bulk=bulk)
-        except RuntimeError:
-            print('bulk data cannot be extracted.')
-        except Exception as e:
-            print('Error: %s' % e)
-
     def copy_from_clipboard_(self):
         editor = self._editor.active()
         content = editor.clipboard_get()
@@ -1580,37 +1590,189 @@ At the age of 40.
         editor.core().insert(tk.INSERT, content)
         editor.core().see(tk.INSERT)
 
-    def get_text(self, editor):
-        text = editor.core()
+    def edit_a_tip_(self):
+        # TODO: make operations more natural.
+        try:
+            editor = self._editor.active()
+            core = editor.core()
+            # 1. check selection
+            sel_range = core.tag_ranges(tk.SEL)
+            if len(sel_range) == 0:
+                tkMessageBox.showerror(MainApp.TITLE, 'Select a part of text before adding a tip.')
+                return
+            # 2.
+            tips = self._tip_mgr.includes(core, *sel_range)
+            if len(tips) == 0:
+                text = core.get(*sel_range)
+                dlg = TipEditDlg(self, sel=text)
+                dlg.show()
+                if dlg.result is None:
+                    return
+                self._tip_mgr.insert(core, dlg.result, tk.SEL_FIRST, tk.SEL_LAST)
+            elif len(tips) > 1:
+                tkMessageBox.showerror(MainApp.TITLE, 'You cannot select more than 1 tip.')
+                return
+            elif tips[0][1] == sel_range[0] and tips[0][2] == sel_range[1]:
+                choice = tkMessageBox.askyesnocancel(MainApp.TITLE, 'Really want to delete tip?')
+                if choice is True:
+                    self._tip_mgr.remove(core, tips[0][0])
+            else:
+                text = core.get(*sel_range)
+                content = self._tip_mgr.get_content(core, tips[0][0])
+                dlg = TipEditDlg(self, sel=text, tip=content)
+                dlg.show()
+                if dlg.result is not None:
+                    self._tip_mgr.update(core, tips[0][0], dlg.result)
+                pass # edit old tip
+            # 3. need saving
+            editor.on_modified()
+        except Exception as e:
+            print('Error: %s' % e)
+
+    def collect_content_(self, text):
+        """
+        @param text: tk.Text widget.
+        @return tuple(textual_data, binary_data)
+        """
         content = text.get('1.0', tk.END).splitlines()
-        # delete redundant trailing spaces
-        content = [i.rstrip() for i in content]
         #
-        # extract table text, put it to content,
-        # so that it can be searched, too.
+        textual = {}
+        #
         windows = text.window_names()
-        if len(windows) > 0:
-            if isinstance(windows[0], basestring):
-                windows = map(text.nametowidget, windows)
-            windows = [w for w in windows if isinstance(w, jtk.TextTableBox)]
-            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
-            for w in windows:
-                line, col = text.index(w).split('.')
-                line = int(line) - 1
-                col = int(col)
-                content[line] = '%s?%s' % (content[line][:col], content[line][col:])
-            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1, reverse=True)
-            for w in windows:
-                _, lines = w.dump()
-                line, col = text.index(w).split('.')
-                line = int(line) - 1
-                col = int(col)
-                content[line] = '%s%s%s' % (content[line][:col], '\n'.join(lines), content[line][col+1:])
-        return '\n'.join(content)
+        if len(windows) > 0 and isinstance(windows[0], basestring):
+            windows = map(text.nametowidget, windows)  # name is converted to widget object
+        #
+        # Use "?" as placeholder which will be replaced by genuine widget when loading from
+        # database in future. With the help of a placeholder, it's easy to insert window to
+        # tk.Text by original position.
+        windows = [w for w in windows if isinstance(w, jtk.StorageMixin)]
+        windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
+        for w in windows:
+            row, col = text.index(w).split('.')
+            row, col = int(row) - 1, int(col)
+            content[row] = '%s?%s' % (content[row][:col], content[row][col:])
+        # 1. text
+        content = [i.rstrip() for i in content]  # delete redundant trailing spaces
+        textual["text"] = '\n'.join(content)
+        # 2. images (their binary data is separated to variable 'binary')
+        buf = io.BytesIO()
+        jfp = jex.FilePile(buf, 'w')
+        images = []
+        for i, w in enumerate([w for w in windows if isinstance(w, jtk.ImageBox)]):
+            pos = text.index(w)
+            data, scale, ext = w.output()
+            image_name = '%s%s' % (i, ext)
+            jfp.append(image_name, data)
+            images.append(dict(name=image_name, pos=pos, scale=scale))
+        jfp.close()
+        if len(images) > 0:
+            textual["image"] = images
+        binary = buf.getvalue()
+        # even if buffer is empty, it still contains magic head bytes
+        if len(binary) == len(jex.FilePile.MAGIC_HEAD):
+            binary = ''
+        # 3. tables
+        tables = []
+        for w in [w for w in windows if isinstance(w, jtk.TextTableBox)]:
+            tables.append(dict(pos=text.index(w), specs=w.output()))
+        if len(tables) > 0:
+            textual["table"] = tables
+        # 4. underlines
+        it = iter(text.tag_ranges('underline'))
+        underlines = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(underlines) > 0:
+            textual["underline"] = underlines
+        # 5. lists
+        it = iter(text.tag_ranges('list'))
+        lists = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(lists) > 0:
+            textual['list'] = lists
+        # 6. superscription
+        it = iter(text.tag_ranges('sup'))
+        sups = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(sups) > 0:
+            textual['sup'] = sups
+        # 7. subscription
+        it = iter(text.tag_ranges('sub'))
+        subs = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(subs) > 0:
+            textual['sub'] = subs
+        # 8. tips
+        tips = self._tip_mgr.export_format(text)
+        if len(tips) > 0:
+            textual['tip'] = tips
+        return textual, binary
 
+    def load_content_(self, editor, doc):
+        """
+        load one document record from database.
+        @param editor: is tk.Text widget
+        @param doc: is DBRecordDoc object
+        """
+        try:
+            core = editor.core()
+            textual, binary = self._store.read_rich(doc.sn)
+            textual = json.loads(textual)
+            text = textual.pop("text", '')
+            # 1. text
+            core.insert('1.0', text)
+            # 2. images
+            images = textual.pop('image', [])
+            if len(images) > 0:
+                jfp = jex.FilePile(io.BytesIO(binary))
+                for i in images:
+                    fd = jfp.open(i['name'])
+                    ext = os.path.splitext(i['name'])[1]
+                    image = jtk.ImageBox(core, image=io.BytesIO(fd.read()), scale=i['scale'], ext=ext)
+                    core.delete(i['pos'])  # delete placeholder
+                    core.window_create(i['pos'], window=image)
+                    fd.close()
+                jfp.close()
+            # 3. tables
+            for i in textual.pop('table', []):
+                table = jtk.TextTableBox(core, table=i['specs'], font=self._font)
+                core.delete(i['pos'])  # delete placeholder
+                core.window_create(i['pos'], window=table)
+            # 4. underlines
+            for pos in textual.pop('underline', []):
+                pos = pos.split(' ')
+                core.tag_add('underline', *pos)
+            # 5. lists
+            for pos in textual.pop('list', []):
+                pos = pos.split(' ')
+                core.tag_add('list', *pos)
+            # 6. superscription
+            for pos in textual.pop('sup', []):
+                pos = pos.split(' ')
+                core.tag_add('sup', *pos)
+            # 7. subscription
+            for pos in textual.pop('sub', []):
+                pos = pos.split(' ')
+                core.tag_add('sub', *pos)
+            # 8. tips
+            for i, t in enumerate(textual.pop('tip', [])):
+                self._tip_mgr.insert(core, t['text'], t['start'], t['end'], i)
+            #
+            # data-loading finished, now initialize digests for big data
+            doc.init_digest(text=text, bulk=binary)
+        except RuntimeError:
+            print('bulk data cannot be extracted.')
+        except Exception as e:
+            print('Error: %s' % e)
 
-def main():
-    MainApp().mainloop()
+    def find_words(self, textual, words):
+        root = json.loads(textual)
+        text = []
+        for t in root.pop('table', []):
+            data = t['specs']
+            text.extend([cell['text'] for row in data for cell in row])
+        for t in root.pop('tip', []):
+            text.append(t['text'])
+        text = '\n'.join(text)
+        if 'text' in root:
+            text = '%s\n%s' % (text, root['text'])
+        return all(text.find(i) > -1 for i in words)
+
 
 if __name__ == "__main__":
-    main()
+    MainApp().mainloop()
