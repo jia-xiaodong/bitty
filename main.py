@@ -864,7 +864,7 @@ class TipManager(object):
         self._tips[text][sn] = content
         name = '%s%d' % (TipManager.prefix, sn)
         text.tag_add(name, start, end)
-        text.tag_config(name, background='gray92')  # the bigger number, the lighter gray color
+        text.tag_config(name, background='gray90')  # the bigger number, the lighter gray color
         text.tag_bind(name, '<Enter>', lambda evt, t=text, s=sn: self.schedule_(t, s))
         text.tag_bind(name, '<Leave>', self.unschedule_)
 
@@ -889,12 +889,12 @@ class TipManager(object):
         tip_tags = [i for i in text.tag_names() if i.startswith(TipManager.prefix)]
         hits = []
         for i in tip_tags:
-            range = text.tag_ranges(i)
-            if text.compare(range[1], '<', index1):
+            ranges = text.tag_ranges(i)
+            if text.compare(ranges[1], '<', index1):
                 continue
-            if text.compare(range[0], '>', index2):
+            if text.compare(ranges[0], '>', index2):
                 continue
-            hits.append((i, range[0], range[1]))
+            hits.append((i, ranges))
         return hits
 
     def schedule_(self, text, sn):
@@ -902,6 +902,7 @@ class TipManager(object):
         self._wnd.wm_overrideredirect(True)  # remove window title bar
         label = tk.Label(self._wnd, text=self._tips[text][sn], justify=tk.LEFT, bg='yellow')
         label.pack(ipadx=5)
+        # calculate coordinates
         rx, ry = text.winfo_rootx(), text.winfo_rooty()
         x, y, _, _ = text.bbox(tk.CURRENT)
         w, h = label.winfo_reqwidth(), label.winfo_reqheight()
@@ -953,7 +954,11 @@ class TipEditDlg(jtk.ModalDialog):
     def __init__(self, master, *a, **kw):
         """
         keyword parameters:
-        @return True if something is changed.
+          sel: the selected characters.
+          tip(optional): old tip owned previously.
+        @return None: if user clicks "Cancel" button.
+                ''(empty str) if user wants to delete this tip.
+                other str: it will be your new tip.
         """
         self._sel = kw.pop('sel')
         self._tip = kw.pop('tip', TipEditDlg._placeholder)
@@ -966,16 +971,29 @@ class TipEditDlg(jtk.ModalDialog):
         self._text = tk.Text(master, width=80, height=4)
         self._text.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         self._text.insert('1.0', self._tip)
+        # make a selection beforehand. So user can easily replace/delete them all
         self._text.tag_add(tk.SEL, '1.0', tk.END)
         return self._text
 
     def apply(self):
         content = self._text.get('1.0', tk.END)
-        self.result = content.strip()
+        content = content.strip()
+        if len(content) == 0 or content == TipEditDlg._placeholder:
+            self.result = ''  # if user doesn't want any tip, leave it empty
+        else:
+            self.result = content
 
-    def validate(self):
-        content = self._text.get('1.0', tk.END)
-        return content.strip() != TipEditDlg._placeholder
+    def buttonbox(self):
+        box = tk.Frame(self)
+        w = tk.Button(box, text="OK", width=10, command=self.ok)
+        w.pack(side=tk.LEFT, padx=5, pady=5)
+        w = tk.Button(box, text="Cancel", width=10, command=self.cancel)
+        w.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.bind("<Escape>", self.cancel)
+
+        box.pack()
+        return box
 
 
 class MainApp(tk.Tk):
@@ -1593,43 +1611,62 @@ At the age of 40.
         editor.core().see(tk.INSERT)
 
     def edit_a_tip_(self):
-        # TODO: make operations more natural.
-        try:
-            editor = self._editor.active()
-            core = editor.core()
-            # 1. check selection
-            sel_range = core.tag_ranges(tk.SEL)
-            if len(sel_range) == 0:
-                tkMessageBox.showerror(MainApp.TITLE, 'Select a part of text before adding a tip.')
-                return
-            # 2.
-            tips = self._tip_mgr.includes(core, *sel_range)
-            if len(tips) == 0:
-                text = core.get(*sel_range)
-                dlg = TipEditDlg(self, sel=text)
-                dlg.show()
-                if dlg.result is None:
+        editor = self._editor.active()
+        core = editor.core()
+        target_tip = None
+        sel_range = core.tag_ranges(tk.SEL)
+        if len(sel_range) == 0:  # user doesn't select anything, try neighboring old tip
+            tags = core.tag_names('%s-1c' % tk.INSERT)  # try left neighbor at first
+            tags = [i for i in tags if i.startswith(TipManager.prefix)]
+            if len(tags) > 0:
+                target_tip = tags[0]
+                sel_range = tip_range = core.tag_ranges(target_tip)
+            else:
+                tags = core.tag_names('%s+1c' % tk.INSERT)  # then try right neighbor
+                tags = [i for i in tags if i.startswith(TipManager.prefix)]
+                if len(tags) > 0:
+                    target_tip = tags[0]
+                    sel_range = tip_range = core.tag_ranges(target_tip)
+                else:
+                    tkMessageBox.showerror(MainApp.TITLE, 'Select a part of text before adding a tip.')
                     return
-                self._tip_mgr.insert(core, dlg.result, tk.SEL_FIRST, tk.SEL_LAST)
-            elif len(tips) > 1:
+        if target_tip is None:  # user makes a selection
+            tips = self._tip_mgr.includes(core, *sel_range)
+            tips_nb = len(tips)
+            if tips_nb > 1:
                 tkMessageBox.showerror(MainApp.TITLE, 'You cannot select more than 1 tip.')
                 return
-            elif tips[0][1] == sel_range[0] and tips[0][2] == sel_range[1]:
-                choice = tkMessageBox.askyesnocancel(MainApp.TITLE, 'Really want to delete tip?')
-                if choice is True:
-                    self._tip_mgr.remove(core, tips[0][0])
-            else:
-                text = core.get(*sel_range)
-                content = self._tip_mgr.get_content(core, tips[0][0])
-                dlg = TipEditDlg(self, sel=text, tip=content)
+            if tips_nb == 0:  # new tip
+                dlg = TipEditDlg(self, sel=core.get(*sel_range))
                 dlg.show()
-                if dlg.result is not None:
-                    self._tip_mgr.update(core, tips[0][0], dlg.result)
-                pass # edit old tip
-            # 3. need saving
+                if dlg.result is not None and len(dlg.result) > 0:
+                    self._tip_mgr.insert(core, dlg.result, *sel_range)
+                    editor.on_modified()
+                return
+            target_tip, tip_range = tips[0]
+        #
+        # edit old tip / delete old tip
+        text = core.get(*sel_range)
+        content = self._tip_mgr.get_content(core, target_tip)
+        dlg = TipEditDlg(self, sel=text, tip=content)
+        dlg.show()
+        if dlg.result is None:    # user cancels
+            return
+        if len(dlg.result) == 0:  # delete tip
+            if not tkMessageBox.askyesno(MainApp.TITLE, 'Are you sure to delete it?'):
+                return
+            self._tip_mgr.remove(core, target_tip)
             editor.on_modified()
-        except Exception as e:
-            print('Error: %s' % e)
+        else:                     # update old tip
+            tip_different = (dlg.result != content)
+            if tip_different:
+                self._tip_mgr.update(core, target_tip, dlg.result)
+            range_different = any(core.compare(sel_range[i], '!=', tip_range[i]) for i in range(2))
+            if range_different:
+                core.tag_remove(target_tip, *tip_range)
+                core.tag_add(target_tip, *sel_range)
+            if any([tip_different, range_different]):
+                editor.on_modified()
 
     def collect_content_(self, text):
         """
