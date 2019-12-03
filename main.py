@@ -890,9 +890,9 @@ class TipManager(object):
         hits = []
         for i in tip_tags:
             ranges = text.tag_ranges(i)
-            if text.compare(ranges[1], '<', index1):
+            if text.compare(ranges[1], '<=', index1):
                 continue
-            if text.compare(ranges[0], '>', index2):
+            if text.compare(ranges[0], '>=', index2):
                 continue
             hits.append((i, ranges))
         return hits
