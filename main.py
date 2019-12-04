@@ -1309,13 +1309,15 @@ class MainApp(tk.Tk):
             return
         indices, self._last_search = dlg.result
         opened = {n:e for e, n in self._notes.iteritems()}
-        for note in [self._last_search.hits[i] for i in indices]:
-            # bug-fix: self._notes may contain old doc object (as old key)
-            for old_note, old_editor in opened.items():
+        for i in indices:
+            note = self._last_search.hits[i]
+            # self._last_search.hits may contains the same doc to the ones in self._notes.
+            # we replace the new doc with the old one, which has newer digests.
+            for old_note in opened:
                 if old_note.sn == note.sn and old_note != note:
-                    self._notes[old_editor] = note
-                    del opened[old_note]
-                    opened[note] = old_editor
+                    self._last_search.hits[i] = old_note
+                    note = old_note
+                    break
             # activate the editor opened previously
             if note in opened:
                 self._editor.switch_tab(opened[note])
