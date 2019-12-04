@@ -387,7 +387,8 @@ class ByTitle(SearchCondition):
         #
         self._result = tk.StringVar()
         tk.Checkbutton(self, variable=self._switch).pack(side=tk.LEFT)
-        e = tk.Entry(self, textvariable=self._result)
+        cb = self.register(self.auto_toggle)
+        e = tk.Entry(self, textvariable=self._result, validate='key', validatecommand=(cb, '%P'))
         e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
         jtk.MakePlaceHolder(e, ByTitle.PLACE_HOLDER)
 
@@ -396,6 +397,17 @@ class ByTitle(SearchCondition):
         if keywords == ByTitle.PLACE_HOLDER:
             return ''
         return keywords.split(' ')
+
+    def auto_toggle(self, text):
+        """
+        If user input something, tick Checkbutton on automatically.
+        """
+        text = text.strip()
+        if len(text) == 0 or text == ByTitle.PLACE_HOLDER:
+            self._switch.set(0)
+        else:
+            self._switch.set(1)
+        return True
 
 
 class ByTags(SearchCondition):
@@ -425,8 +437,7 @@ class ByTags(SearchCondition):
             return
         self._result[:] = dlg.result
         self._tags_string.set(','.join(i.name for i in self._result))
-        if not self._switch.get():
-            self._switch.set(1)
+        self._switch.set(len(self._result) > 0)
 
 
 class ByDate(SearchCondition):
@@ -440,9 +451,9 @@ class ByDate(SearchCondition):
         # row 1
         row1 = tk.Frame(self)
         row1.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        self._from, self._to = None, None
         self._date_from = tk.StringVar()
         self._date_from.trace('w', self.from_changed_)
-        self._from = None
         e = tk.Entry(row1, textvariable=self._date_from)
         e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
         jtk.MakePlaceHolder(e, "<from what day it was edited?>")
@@ -454,7 +465,6 @@ class ByDate(SearchCondition):
         row2.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         self._date_to = tk.StringVar()
         self._date_to.trace('w', self.to_changed_)
-        self._to = None
         e = tk.Entry(row2, textvariable=self._date_to)
         e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
         jtk.MakePlaceHolder(e, "<to what day it was edited?>")
@@ -488,6 +498,8 @@ class ByDate(SearchCondition):
                 self._switch.set(1)
         except ValueError:
             self._from = None
+            if self._to is None:
+                self._switch.set(0)
 
     def to_changed_(self, name, index, mode):
         try:
@@ -498,33 +510,47 @@ class ByDate(SearchCondition):
                 self._switch.set(1)
         except ValueError:
             self._to = None
+            if self._from is None:
+                self._switch.set(0)
 
 
 class ByOrder(SearchCondition):
     def __init__(self, master, *a, **kw):
         SearchCondition.__init__(self, master, *a, **kw)
         tk.Checkbutton(self, variable=self._switch).pack(side=tk.LEFT)
+        cb = self.register(self.auto_toggle)
         self._from = tk.StringVar()
-        e = tk.Entry(self, textvariable=self._from, width=16)
+        self._to   = tk.StringVar()
+        e = tk.Entry(self, textvariable=self._from, width=16, validate='key', validatecommand=cb)
         e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
         jtk.MakePlaceHolder(e, '<Record ID from ?>')
-        self._to = tk.StringVar()
-        e = tk.Entry(self, textvariable=self._to, width=16)
+        e = tk.Entry(self, textvariable=self._to, width=16, validate='key', validatecommand=cb)
         e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
         jtk.MakePlaceHolder(e, '<Record ID to ?>')
 
     def get_result(self):
+        # from
+        f = None
         try:
             f = int(self._from.get())
         except ValueError:
-            f = None
+            pass
+        # to
+        t = None
         try:
             t = int(self._to.get())
         except ValueError:
-            t = None
-        finally:
-            return f, t
+            pass
+        return f, t
 
+    def auto_toggle(self):
+        results = self.get_result()
+        ticked = self._switch.get()
+        if not ticked and any(i is not None for i in results):
+            self._switch.set(1)
+        if ticked and all(i is None for i in results):
+            self._switch.set(0)
+        return True
 
 class NotePreview:
     LINES_MAX = 15
@@ -1050,10 +1076,20 @@ class MainApp(tk.Tk):
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 0)
         menu.add_command(label='Insert Text Table', command=self.edit_insert_table_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 1)
-        menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 2)
-        menu.add_command(label='Attach a Tip', command=self.edit_a_tip_)
+        menu.add_separator()  # separator holds one place (index 2) in menu
+        menu.add_command(label='Make Underline', command=self.edit_underline_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 3)
+        menu.add_command(label='Make List', command=self.edit_mark_list_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 4)
+        menu.add_command(label='Make Superscript', command=self.edit_make_superscript_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 5)
+        menu.add_command(label='Make Subscript', command=self.edit_make_subscript_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 6)
+        menu.add_command(label='Edit a Tip', command=self.edit_a_tip_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 7)
+        menu.add_separator()
+        menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 9)
         menu_bar.add_cascade(label='Edit', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 2)
         # help
@@ -1135,20 +1171,12 @@ class MainApp(tk.Tk):
         jtk.CreateToolTip(btn, 'Format: List')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
-        n += 1
+        n += 3
         ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
-        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_make_superscript_)
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_a_tip_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
-        jtk.CreateToolTip(btn, 'Format: Superscript')
-        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
-        #
-        n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
-        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_make_subscript_)
-        btn.image = ico
-        btn.pack(side=tk.LEFT)
-        jtk.CreateToolTip(btn, 'Format: Subscript')
+        jtk.CreateToolTip(btn, 'Edit a Tip')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
