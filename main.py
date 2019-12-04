@@ -784,7 +784,7 @@ class OpenDocDlg(jtk.ModalDialog):
         if len(conditions) == 0:
             self._state.clear()
         else:
-            self._state.hits = self._store.select_doc(**conditions)
+            self._state.hits[:] = self._store.select_doc(**conditions)
         jtk.MessageBubble(self._btn_search, '%d found' % len(self._state.hits))
         self.jump_page_(0)
 
@@ -1310,7 +1310,13 @@ class MainApp(tk.Tk):
         indices, self._last_search = dlg.result
         opened = {n:e for e, n in self._notes.iteritems()}
         for note in [self._last_search.hits[i] for i in indices]:
-            # if it's already opened
+            # bug-fix: self._notes may contain old doc object (as old key)
+            for old_note, old_editor in opened.items():
+                if old_note.sn == note.sn and old_note != note:
+                    self._notes[old_editor] = note
+                    del opened[old_note]
+                    opened[note] = old_editor
+            # activate the editor opened previously
             if note in opened:
                 self._editor.switch_tab(opened[note])
                 continue
