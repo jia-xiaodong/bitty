@@ -759,8 +759,8 @@ class OpenDocDlg(jtk.ModalDialog):
             keywords = self._sb_tit.get_result()
             if len(keywords) > 0:
                 keywords[:] = ['"%%%s%%"' % i for i in keywords]
-                latter = ' AND desc LIKE '.join(keywords)
-                conditions['title'] = 'desc LIKE %s' % latter
+                latter = ' AND title LIKE '.join(keywords)
+                conditions['title'] = 'title LIKE %s' % latter
         if self._sb_tag.enabled():
             tags = self._sb_tag.get_result()
             if len(tags) > 0:
