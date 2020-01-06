@@ -916,6 +916,8 @@ class TipManager(object):
         hits = []
         for i in tip_tags:
             ranges = text.tag_ranges(i)
+            if len(ranges) < 2:  # it's strange that sometimes ranges is empty!
+                continue
             if text.compare(ranges[1], '<=', index1):
                 continue
             if text.compare(ranges[0], '>=', index2):
@@ -961,6 +963,8 @@ class TipManager(object):
         for i in text.tag_names():
             if i.startswith(TipManager.prefix):
                 ranges = text.tag_ranges(i)
+                if len(ranges) < 2:  # it's strange that sometimes ranges is empty!
+                    continue
                 tip_tags.append((i, text.index(ranges[0]), text.index(ranges[1])))
         # the purpose of sort is only one: digest comparison
         tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1)
