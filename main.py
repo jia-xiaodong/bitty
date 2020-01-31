@@ -569,27 +569,27 @@ class NotePreview:
         #
         tk.Label(top, text='Edited: %s' % note.date).pack(side=tk.TOP, anchor=tk.W)
         #
-        option = {'width': NotePreview.LINE_WIDTH, 'height': NotePreview.LINES_MAX}
-        editor = jtk.TextEditor(top, core=option)
         content, _ = database.read_doc(note.sn)
         content = json.loads(content).pop("text", '')
         limit = NotePreview.LINE_WIDTH * NotePreview.LINES_MAX
         lines = content[:limit].split('\n')[:NotePreview.LINES_MAX]
-        editor.core().insert(tk.END, '\n'.join(lines))
-        editor.core().config(state=tk.DISABLED)  # disable editing after loading
+        option = {'width': NotePreview.LINE_WIDTH, 'height': NotePreview.LINES_MAX}
+        editor = tk.Text(top, **option)
+        editor.insert(tk.END, '\n'.join(lines))
+        editor.config(state=tk.DISABLED)  # disable editing after loading
         editor.pack(side=tk.TOP, pady=5)
         #
         # Strange function. It will affect <Motion> event behavior.
         # Here it grabs the mouse <motion> event without user's explicit click on window.
         # Of course, I mean it on Mac platform for now. TODO: what about windows?
         top.grab_set()
-        top.bind('<Motion>', self.close_)
+        top.bind('<Motion>', self.check_close_)
         #
         top.geometry("+%d+%d" % (master.winfo_rootx()+100, master.winfo_rooty()))
         # detect user 'enter-zone' behavior
         self._been_entered = False
 
-    def close_(self, evt):
+    def check_close_(self, evt):
         x, y = self._top.winfo_rootx(), self._top.winfo_rooty()
         position = (evt.x_root - x, evt.y_root - y)  # in top-level coordinate space
         w, h = self._top.winfo_width(), self._top.winfo_height()
@@ -600,6 +600,9 @@ class NotePreview:
                 self._been_entered = True
         elif not in_zone:  # enter and leave
             self._top.destroy()
+
+    def close(self):
+        self._top.destroy()
 
 
 class OpenDocDlg(jtk.ModalDialog):
@@ -655,6 +658,7 @@ class OpenDocDlg(jtk.ModalDialog):
         # jump to the page of lastly opened time
         if len(self._state.hits) > 0:
             self.jump_page_(self._state.page)
+        self._preview = None
 
     def body(self, master):
         frm = tk.LabelFrame(master, text='Search by:')
@@ -799,7 +803,9 @@ class OpenDocDlg(jtk.ModalDialog):
             return
         index = self._note_list.index(active)
         index += self._state.page * OpenDocDlg.PAGE_NUM
-        NotePreview(self, database=self._store, note=self._state.hits[index])
+        if self._preview is not None:
+            self._preview.close()
+        self._preview = NotePreview(self, database=self._store, note=self._state.hits[index])
 
     def sort_by_id_(self):
         self._state.sort_switch(OpenDocDlg.SORT_BY_ID)
