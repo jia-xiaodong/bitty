@@ -552,6 +552,7 @@ class ByOrder(SearchCondition):
             self._switch.set(0)
         return True
 
+
 class NotePreview:
     LINES_MAX = 15
     LINE_WIDTH = 40
@@ -570,7 +571,8 @@ class NotePreview:
         #
         option = {'width': NotePreview.LINE_WIDTH, 'height': NotePreview.LINES_MAX}
         editor = jtk.TextEditor(top, core=option)
-        content = database.read_plain(note.sn)
+        content, _ = database.read_doc(note.sn)
+        content = json.loads(content).pop("text", '')
         limit = NotePreview.LINE_WIDTH * NotePreview.LINES_MAX
         lines = content[:limit].split('\n')[:NotePreview.LINES_MAX]
         editor.core().insert(tk.END, '\n'.join(lines))
@@ -1790,7 +1792,7 @@ At the age of 40.
         """
         try:
             core = editor.core()
-            textual, binary = self._store.read_rich(doc.sn)
+            textual, binary = self._store.read_doc(doc.sn)
             textual = json.loads(textual)
             text = textual.pop("text", '')
             # 1. text

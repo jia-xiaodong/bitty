@@ -260,18 +260,7 @@ class DocBase(object):
         self._con = sqlite3.connect(filename, **DocBase.date_support)
         self._tags = self.load_all_tags()
 
-    def read_plain(self, sn):
-        """
-        @return: str
-        """
-        try:
-            cur = self._con.cursor()
-            cur.execute('SELECT text FROM docs WHERE id=?', (sn,))
-            return DocBase.unzip_(cur.fetchone()[0])
-        except Exception as e:
-            print('Error on select: %s' % e)
-
-    def read_rich(self, sn):
+    def read_doc(self, sn):
         """
         @return: tuple(str, bytes)
         """
