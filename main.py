@@ -1465,7 +1465,8 @@ class MainApp(tk.Tk):
 
     def menu_doc_delete_(self):
         editor = self._editor.active()
-        if not tkMessageBox.askokcancel(MainApp.TITLE, 'Do you really want to delete it?'):
+        caption = self._editor.get_caption(editor)
+        if not tkMessageBox.askokcancel(MainApp.TITLE, 'Do you really want to delete\n"%s"?' % caption):
             return
         if editor in self._notes:
             note = self._notes.pop(editor)
@@ -1718,8 +1719,9 @@ At the age of 40.
         if not jdb.DocBase.validate(database):
             tkMessageBox.showerror(MainApp.TITLE, 'Database format is different!')
             return
-        self._store.copy_docs(records, database)
-        tkMessageBox.showinfo(MainApp.TITLE, 'Records are duplicated.')
+        num = self._store.copy_docs(records, database)
+        quiz = 'records are duplicated to'
+        tkMessageBox.showinfo(MainApp.TITLE, '%d %s\n%s.' % (num, quiz, os.path.basename(database)))
 
     def config_core(self, editor):
         text = editor.core()

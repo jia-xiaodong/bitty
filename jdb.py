@@ -280,16 +280,22 @@ class DocBase(object):
         """
         try:
             con = sqlite3.connect(database)
-            #
-            sn_set = ','.join(str(i) for i in sn_set)
-            sql_select = 'SELECT title, text, bulk, date FROM docs WHERE id in (%s)' % sn_set
+            # check if sn is continuous
+            up, down = max(sn_set), min(sn_set)
+            if up - down + 1 == len(sn_set):
+                condition = 'id <= %d AND id >= %d' % (up, down)
+            else:
+                condition = 'id in (%s)' % ','.join(str(i) for i in sn_set)
+            # filter records
+            sql_select = 'SELECT title, text, bulk, date FROM docs WHERE %s' % condition
             cur = self._con.cursor()
             cur.execute(sql_select)
-            #
+            # write to new database
             sql_insert = 'INSERT INTO docs (title, text, bulk, tags, date) VALUES(?,?,?,?,?)'
             docs = [(ttl, txt, blk, '', dat) for ttl, txt, blk, dat in cur.fetchall()]
             con.executemany(sql_insert, docs)
             con.commit()
+            return len(docs)
         except Exception as e:
             print(e)
 
