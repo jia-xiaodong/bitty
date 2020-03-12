@@ -863,13 +863,13 @@ class EntryOps:
 
 
 class RelyItem:
-    def __init__(self, w, evt, caveat=-1):
+    def __init__(self, w, evt, sid=-1):
         """
         @param w is Tkinter widget, could be menu or button
-        @note: if w is a menu, then caveat is the index of its sub-menu item.
+        @note: if w is a menu, then sid is the index of its sub-menu item.
         """
         self._w = w
-        self._c = caveat
+        self._c = sid
 
     def set_state(self, state):
         if self._c > -1:  # menu item
@@ -1034,6 +1034,65 @@ class TipEditDlg(jtk.ModalDialog):
         return box
 
 
+class DocCopyDlg(jtk.ModalDialog):
+    def __init__(self, master, *a, **kw):
+        self._storePath = tk.StringVar()
+        self._recordIDs = tk.StringVar()
+        jtk.ModalDialog.__init__(self, master, *a, **kw)
+
+    def body(self, master):
+        frame = tk.Frame(master)
+        frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        tk.Label(frame, text='Destination:').pack(side=tk.LEFT)
+        e1 = tk.Entry(frame, textvariable=self._storePath)
+        e1.pack(side=tk.LEFT, expand=tk.YES, fill=tk.X)
+        tk.Button(frame, text='Browse', command=self.onclick_browse).pack(side=tk.LEFT)
+        frame = tk.Frame(master)
+        frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        tk.Label(frame, text='Record IDs:').pack(side=tk.LEFT)
+        placeholder = '<Separated by comma; Ranged by hyphen>'
+        e2 = tk.Entry(frame, textvariable=self._recordIDs, width=len(placeholder))
+        e2.pack(side=tk.LEFT, expand=tk.YES, fill=tk.X)
+        jtk.MakePlaceHolder(e2, placeholder)
+        return e1
+
+    def validate(self):
+        database = self._storePath.get()
+        records = self.get_record_id()
+        return len(database) > 0 and len(records) > 0
+
+    def apply(self):
+        database = self._storePath.get()
+        records = self.get_record_id()
+        self.result = (database, records)
+
+    def onclick_browse(self):
+        filename = tkFileDialog.askopenfilename()
+        if filename == '':
+            return
+        self._storePath.set(filename)
+
+    def get_record_id(self):
+        records = self._recordIDs.get()
+        records = records.split(',')
+        record_id = set()
+        for i in records:
+            try:
+                i = i.strip()
+                if i.find('-') > 0:
+                    pos = i.find('-')
+                    start = int(i[:pos])
+                    stop = int(i[pos+1:])
+                    # add new range: [start, stop]
+                    # +1 to include "stop"
+                    record_id = record_id.union(set(range(start, stop+1)))
+                else:
+                    record_id.add(int(i))
+            except Exception as e:
+                print(e)
+        return record_id
+
+
 class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
@@ -1062,7 +1121,8 @@ class MainApp(tk.Tk):
         menu.add_command(label='New', command=self.menu_database_new_)
         menu.add_command(label='Open', command=self.menu_database_open_)
         menu.add_command(label='Close', command=self.menu_database_close_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 2)  # 2 is the index of menu 'Close'
+        # 2 is the index of sub-menu 'Close'. It's effective when DB exists (EVENT_DB_EXIST).
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 2)
         menu.add_separator()
         menu.add_command(label='Quit', command=self.quit_)
         menu_bar.add_cascade(label='Database', menu=menu)
@@ -1080,6 +1140,8 @@ class MainApp(tk.Tk):
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 4)
         menu.add_command(label='Export to HTML', command=self.doc_export_html_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 5)
+        menu.add_command(label='Copy to Other DB', command=self.doc_copy_elsewhere_)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 6)
         menu_bar.add_cascade(label='Document', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 1)
         # edit
@@ -1508,8 +1570,13 @@ At the age of 40.
         self.bind(MainApp.EVENT_DB_EXIST, self.notify_db_ops_)
         self.bind(MainApp.EVENT_DOC_EXIST, self.notify_doc_ops_)
 
-    def add_listener(self, wgt, evt, caveat=-1):
-        item = RelyItem(wgt, evt, caveat)
+    def add_listener(self, wgt, evt, sid=-1):
+        """
+        @param wgt: widget.
+        @param evt: event.
+        @param sid: if wgt is a menu, then sid is the index of its sub-menu item. Otherwise it's meaningless.
+        """
+        item = RelyItem(wgt, evt, sid)
         if evt in self._relied:
             self._relied[evt].append(item)
         else:
@@ -1641,6 +1708,18 @@ At the age of 40.
     def doc_export_html_(self):
         # TODO: export one doc to HTML
         pass
+
+    def doc_copy_elsewhere_(self):
+        dlg = DocCopyDlg(self)
+        dlg.show()
+        if dlg.result is None:
+            return
+        database, records = dlg.result
+        if not jdb.DocBase.validate(database):
+            tkMessageBox.showerror(MainApp.TITLE, 'Database format is different!')
+            return
+        self._store.copy_docs(records, database)
+        tkMessageBox.showinfo(MainApp.TITLE, 'Records are duplicated.')
 
     def config_core(self, editor):
         text = editor.core()
@@ -1859,7 +1938,6 @@ At the age of 40.
         if 'text' in root:
             text = '%s\n%s' % (text, root['text'])
         return all(text.find(i) > -1 for i in words)
-
 
 if __name__ == "__main__":
     MainApp().mainloop()

@@ -272,6 +272,27 @@ class DocBase(object):
         except Exception as e:
             print('Error on select: %s' % e)
 
+    def copy_docs(self, sn_set, database):
+        """
+        Copy a few records to another database.
+        @param sn_set: a set of record IDs.
+        @param database: filename of destination database.
+        """
+        try:
+            con = sqlite3.connect(database)
+            #
+            sn_set = ','.join(str(i) for i in sn_set)
+            sql_select = 'SELECT title, text, bulk, date FROM docs WHERE id in (%s)' % sn_set
+            cur = self._con.cursor()
+            cur.execute(sql_select)
+            #
+            sql_insert = 'INSERT INTO docs (title, text, bulk, tags, date) VALUES(?,?,?,?,?)'
+            docs = [(ttl, txt, blk, '', dat) for ttl, txt, blk, dat in cur.fetchall()]
+            con.executemany(sql_insert, docs)
+            con.commit()
+        except Exception as e:
+            print(e)
+
     def select_doc(self, **conditions):
         try:
             clauses = []

@@ -1348,7 +1348,15 @@ class ImageBox(tk.Canvas, StorageMixin):
                     self._gif_task = self.after(self._gif_dura, self.display_)
         else:
             src = self._src
-        self._dst = ImageTk.PhotoImage(image=src.resize((new_w, new_h)))
+        src = src.resize((new_w, new_h))
+        # [bug-fix] Mac tkinter Canvas doesn't support RGBA image.
+        if 'A' in Image.getmodebandnames(src.mode) and curr_os == PLATFORM.Darwin:
+            bg_color = self.winfo_rgb(self.cget('background'))
+            bg_color = tuple([i * 255 / 65535 for i in bg_color])
+            bg_image = Image.new('RGB', src.size, color=bg_color)
+            bg_image.paste(src, mask=src)
+            src = bg_image
+        self._dst = ImageTk.PhotoImage(image=src)
         if self._iid == 0:
             self._iid = self.create_image(CANVAS_BIAS, CANVAS_BIAS, anchor=tk.NW, image=self._dst)
         else:
