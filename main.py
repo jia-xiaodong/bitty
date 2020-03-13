@@ -727,6 +727,7 @@ class OpenDocDlg(jtk.ModalDialog):
         btn.pack(side=tk.LEFT)
         tk.Button(box, text="OK", command=self.ok).pack(side=tk.LEFT)
         #
+        self.bind("<Return>", self.search_)
         self.bind("<Escape>", self.cancel)
         #
         box.pack()
@@ -759,7 +760,7 @@ class OpenDocDlg(jtk.ModalDialog):
         total = max(len(self._state.hits), 1)
         return (total - 1) / OpenDocDlg.PAGE_NUM + 1
 
-    def search_(self):
+    def search_(self, evt=None):
         conditions = {}
         if self._sb_tit.enabled():
             keywords = self._sb_tit.get_result()
@@ -1697,9 +1698,9 @@ At the age of 40.
             ts = self.clipboard_get()
             table = json.loads(ts)
         except ValueError:
-            table = [[{'text': 'single-click'}, {'text': 'to select'}, {'text': 'table cell'}],
-                     [{'text': 'double-click'}, {'text': 'to edit'}, {'text': 'text'}],
-                     [{'text': 'control-enter'}, {'text': 'to finish'}, {'text': 'input'}]]
+            table = [[{"text": "single-click"}, {"text": "to select"}, {"text": "table cell"}],
+                     [{"text": "double-click"}, {"text": "to edit"}, {"text": "text"}],
+                     [{"text": "control-enter"}, {"text": "to finish"}, {"text": "input"}]]
         finally:
             editor = self._editor.active()
             w = jtk.TextTableBox(editor.core(), table=table, font=self._font)
