@@ -15,6 +15,7 @@ import tkFileDialog
 from PIL import Image, ImageSequence, ImageTk
 from sys import platform
 import jex
+import json
 
 
 PLATFORM = jex.enum1(Darwin=0, Win=1)
@@ -1466,6 +1467,13 @@ class TextTableBox(tk.Canvas, StorageMixin):
             cascade.add_command(label='horizontal', command=master.split_horizontal)
             cascade.add_command(label='vertical', command=master.split_vertical)
             self.add_cascade(label='split cell', menu=cascade)
+            #
+            self.add_command(label='JSON to clipboard', command=lambda: self.json_to_clipboard(master))
+
+        def json_to_clipboard(self, table):
+            self.clipboard_clear()
+            json_str = json.dumps(table.output())
+            self.clipboard_append(json_str)
 
     HEIGHT = 0
     PADDING = 0
@@ -1491,6 +1499,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self._edited.bind('<Control-Return>', self.finish_edit_)
         self._edited.bind('<Escape>', self.hide_input_)
         self._edited.bind('<Leave>', self.finish_edit_)
+        self._edited.bind('<Mod1-a>', self.edit_select_all_)
         #
         self.bind('<2>', self.on_popup_menu_)
         self._menu = TextTableBox.Popup(self)
@@ -1593,6 +1602,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self._edited.insert('1.0', cell.text)
         self._edited.place({'x': x1, 'y': y1, 'width': x2-x1, 'height': y2-y1})
         self._edited.focus_set()
+        self._edited.tag_add(tk.SEL, '1.0', tk.END)
 
     def finish_edit_(self, evt):
         # avoid conflict between Ctrl-Enter and <Leave> event
@@ -1604,6 +1614,11 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self.hide_input_()
         self.draw_table(self.grid_rows(), self.grid_cols())
         self.on_modified_()
+
+    def edit_select_all_(self, evt):
+        if not self._edited.winfo_ismapped():
+            return
+        self._edited.tag_add(tk.SEL, '1.0', tk.END)
 
     def reset_cowh_(self, rows, cols):
         """
