@@ -943,7 +943,12 @@ class TipManager(object):
         rx, ry = text.winfo_rootx(), text.winfo_rooty()
         x, y, _, _ = text.bbox(tk.CURRENT)
         w, h = label.winfo_reqwidth(), label.winfo_reqheight()
-        self._wnd.wm_geometry("+%d+%d" % (rx+x-w/2, ry+y-h))
+        padding = 20  # keep a minimal distance from screen border
+        ox = max(rx+x-w/2, padding)
+        oy = max(ry+y-h, padding)
+        ox = min(ox, text.winfo_screenwidth()-padding-w)
+        oy = min(oy, text.winfo_screenheight()-padding-h)
+        self._wnd.wm_geometry("+%d+%d" % (ox, oy))
 
     def unschedule_(self, evt=None):
         if self._wnd is None:
@@ -1480,10 +1485,10 @@ class MainApp(tk.Tk):
     def menu_help_about_(self):
         msg = '''
 It's an Electrical Diary app.
-You can record everything in life at will.
+You can write everything here in daily life.
 
 Chinese saying: rotten pencil surpasses smart head.
-It's more and more obvious when I get aged.
+It's more and more obvious when I get old.
 
 Finished by "Jia xiao dong" on Apr 21, 2019,
 At the age of 40.
@@ -1687,8 +1692,14 @@ At the age of 40.
             image = jtk.ImageBox(core, image=open(images[0]), ext=os.path.splitext(images[0])[1])
             core.window_create(tk.INSERT, window=image)
         else:
+            # a hidden trick: copy start-number from clipboard
+            try:
+                start = int(self.clipboard_get())
+            except:
+                start = 0
+            #
             for i, each in enumerate(images):
-                core.insert(tk.INSERT, '\n%d\n' % (i+1))
+                core.insert(tk.INSERT, '\n%d\n' % (i+start+1))
                 image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
                 core.window_create(tk.INSERT, window=image)
         editor.on_modified()
