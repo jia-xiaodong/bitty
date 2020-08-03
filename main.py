@@ -664,7 +664,7 @@ class OpenDocDlg(jtk.ModalDialog):
         frm = tk.LabelFrame(master, text='Search by:')
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES, ipadx=5, ipady=5)
         # search conditions
-        box = jtk.TabBox(frm)
+        box = jtk.TabBarFrame(frm, width=70)
         box.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         # 1. search by title
         self._sb_tit = ByTitle(box)
@@ -1367,7 +1367,7 @@ class MainApp(tk.Tk):
         return True
 
     def quit_(self):
-        if self._editor.active() and\
+        if self._editor.active and\
            not tkMessageBox.askokcancel(MainApp.TITLE, 'Are you sure to QUIT?'):
             return
         if not self.menu_database_close_():
@@ -1414,7 +1414,7 @@ class MainApp(tk.Tk):
                 self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
 
     def menu_doc_save_(self, evt=None):
-        editor = self._editor.active()
+        editor = self._editor.active
         if not editor.modified():
             return
         self.save_(editor)
@@ -1456,7 +1456,7 @@ class MainApp(tk.Tk):
         return errors
 
     def menu_doc_close_(self):
-        editor = self._editor.active()
+        editor = self._editor.active
         if editor.modified():
             choice = tkMessageBox.askyesnocancel(MainApp.TITLE, 'Wanna SAVE changes before closing doc?')
             if choice is None:  # cancel
@@ -1465,12 +1465,12 @@ class MainApp(tk.Tk):
                 self.save_(editor)
         self._editor.remove(editor)
         self._notes.pop(editor, None)
-        if self._editor.active() is None:
+        if self._editor.active is None:
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
             self._search.pack_forget()
 
     def menu_doc_delete_(self):
-        editor = self._editor.active()
+        editor = self._editor.active
         caption = self._editor.get_caption(editor)
         if not tkMessageBox.askokcancel(MainApp.TITLE, 'Do you really want to delete\n"%s"?' % caption):
             return
@@ -1479,7 +1479,7 @@ class MainApp(tk.Tk):
             if self._store.delete_doc(note.sn) and note in self._last_search.hits:
                 self._last_search.hits.remove(note)
         self._editor.remove(editor)
-        if self._editor.active() is None:
+        if self._editor.active is None:
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
 
     def menu_help_about_(self):
@@ -1518,7 +1518,7 @@ At the age of 40.
         jdb.DocBase.assign_finder(self.find_words)
 
     def menu_doc_attr_(self):
-        editor = self._editor.active()
+        editor = self._editor.active
         try:
             record = self._notes[editor]
         except KeyError:
@@ -1547,7 +1547,7 @@ At the age of 40.
         return False
 
     def menu_edit_find_(self, evt=None):
-        editor = self._editor.active()
+        editor = self._editor.active
         if self._search.winfo_ismapped():
             self._search.detach()
             self._search.pack_forget()
@@ -1559,7 +1559,7 @@ At the age of 40.
     def on_tab_switched_(self, evt):
         if self._search.winfo_ismapped():
             self._search.detach()
-            self._search.attach(self._editor.active().core())
+            self._search.attach(self._editor.active.core())
 
     def font_changed_(self):
         family = self._font_family.get()
@@ -1621,7 +1621,7 @@ At the age of 40.
     def edit_mark_list_(self):
         TAG = 'list'
         try:
-            editor = self._editor.active()
+            editor = self._editor.active
             core = editor.core()
             # 1. check if current line is list.
             sel_range = core.tag_ranges(tk.SEL)
@@ -1656,7 +1656,7 @@ At the age of 40.
 
     def toggle_format_(self, tag, conflict=None):
         try:
-            editor = self._editor.active()
+            editor = self._editor.active
             core = editor.core()
             # 1. check
             sel_range = core.tag_ranges(tk.SEL)
@@ -1686,7 +1686,7 @@ At the age of 40.
         images = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)], multiple=True)
         if len(images) == 0:
             return
-        editor = self._editor.active()
+        editor = self._editor.active
         core = editor.core()
         if len(images) == 1:
             image = jtk.ImageBox(core, image=open(images[0]), ext=os.path.splitext(images[0])[1])
@@ -1713,7 +1713,7 @@ At the age of 40.
                      [{"text": "double-click"}, {"text": "to edit"}, {"text": "text"}],
                      [{"text": "control-enter"}, {"text": "to finish"}, {"text": "input"}]]
         finally:
-            editor = self._editor.active()
+            editor = self._editor.active
             w = jtk.TextTableBox(editor.core(), table=table, font=self._font)
             editor.core().window_create(tk.INSERT, window=w)
             editor.on_modified()
@@ -1745,14 +1745,14 @@ At the age of 40.
         text.tag_config('sub', offset=-height/3)
 
     def copy_from_clipboard_(self):
-        editor = self._editor.active()
+        editor = self._editor.active
         content = editor.clipboard_get()
         content = '\n'.join(content.splitlines())
         editor.core().insert(tk.INSERT, content)
         editor.core().see(tk.INSERT)
 
     def edit_a_tip_(self):
-        editor = self._editor.active()
+        editor = self._editor.active
         core = editor.core()
         target_tip = None
         sel_range = core.tag_ranges(tk.SEL)

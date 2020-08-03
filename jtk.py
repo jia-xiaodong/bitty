@@ -733,95 +733,244 @@ class TextEditor(tk.Frame):
         return self._ops[index]
 
 
-class TabBox(tk.Frame):
-    WIDTH_ACTIVE = 20
-    WIDTH_HIDDEN = 10
+class TabBarTab:
+    def __init__(self, caption, frame, has_close_button=False):
+        self.caption = caption  # text of caption
+        self.caption_id = 0     # text id in canvas. "0" means invalid id.
+        self.shape_id = 0       # shape id in canvas. Shape can be rectangle or polygon.
+        self.frame = frame
+        # you can enable this feature
+        self.close_btn = 0 if has_close_button else -1
+
+    def has_close_button(self):
+        return self.close_btn != -1
+
+    def need_button(self):
+        return self.close_btn == 0
+
+
+class TabBarFrame(tk.Frame):
+    BAR_H = 30         # width of whole tab-bar
+    TAB_W = 120        # width of tab-button
+    TAB_H = BAR_H - 8  # height of tab-button. "8" is a magic number.
+    CLOSE_W = 25       # width fo "close" button
+    MARGIN = 3         # margin to borders
+    FOOTER_H = 7       # height of white ribbon at bottom
+    PADDING = 8        # left/right padding for "X" (close button)s
+    text_font = None
 
     def __init__(self, master=None, *a, **kw):
+        self.has_exit = kw.pop('close', False)
+        self.TAB_W = kw.pop('width', 120)
         tk.Frame.__init__(self, master, *a, **kw)
-        self._tabs = {}
-        self._active = None
-        self._top = tk.Frame(self)
-        self._top.pack(side=tk.TOP, fill=tk.X, expand=tk.NO, anchor=tk.W)
+        self.tabs = []
+        self.active = None
+        self.bar = tk.Canvas(self, height=TabBarFrame.BAR_H)
+        self.bar.pack(side=tk.TOP, anchor=tk.W, fill=tk.X, expand=tk.NO)
+        self.bar.bind('<ButtonPress-1>', self.on_clicked)
+        #
+        if TabBarFrame.text_font is None:
+            TabBarFrame.text_font = tkFont.Font()
+        #
+        self.bind('<Map>', self.on_widget_placed)        # event: widget placement
+        self.bind('<Configure>', self.on_resize)  # event: resize
+
+    def on_widget_placed(self, evt):
+        self.switch_tab(self.active)
+
+    def on_resize(self, evt):
+        if self.active is None:
+            if len(self.tabs) > 0 and self.tabs[0].shape_id == 0:
+                self.switch_tab(self.tabs[0].frame)
+        else:
+            current_active_frame = self.active
+            self.active = None  # clear it to force redrawing of active tab
+            self.switch_tab(current_active_frame)
 
     def add(self, frame, caption):
         """
         @param frame is an instance of tk.Frame class
         """
         frame.pack_forget()  # hide on init
-        btn = tk.Button(self._top, text=caption, relief=tk.SUNKEN,
-                        foreground='white', disabledforeground='black', bg='grey',
-                        command=lambda: self.switch_tab(frame))
-        btn.pack(side=tk.LEFT)
-        self._tabs[frame] = btn
-        if len(self._tabs) == 1:
-            self.switch_tab(frame)
+        self.tabs.append(TabBarTab(caption, frame, self.has_exit))
+        if len(self.tabs) == 1:
+            self.event_generate('<Map>')
+        else:
+            self.draw_tab(len(self.tabs)-1, False)
 
-    def remove(self, frame=None, caption=None):
+    def remove(self, frame):
         """
         @param frame is tk.Frame instance
         @param caption is str instance
         """
-        if caption is not None:
-            for f, b in self._tabs.iteritems():
-                if b['text'] == caption:
-                    frame = f
-                    break  # remove the first-found one even if multiple pages have same caption
-        if frame is None:
-            return
-        if frame not in self._tabs:
-            return
-        frame.pack_forget()
-        self._tabs[frame].pack_forget()
-        del self._tabs[frame]
+        index, tab = self.tab_by_frame(frame)
         #
-        # pick up another as active frame
-        if frame != self._active:
-            return
-        self._active = None
-        if len(self._tabs) > 0:
-            self.switch_tab(self._tabs.keys()[-1])
+        for i, t in enumerate(self.tabs[index+1:]):
+            if t.frame == self.active:
+                self.draw_tab(i, True)
+            else:
+                self.bar.move(t.shape_id, -self.TAB_W, 0)
+                self.bar.move(t.caption_id, -self.TAB_W, 0)
+                self.bar.move(t.close_btn, -self.TAB_W, 0)
+        #
+        self.bar.delete(tab.caption_id, tab.shape_id, tab.close_btn)
+        self.tabs.remove(tab)
+        frame.pack_forget()
+        #
+        if frame == self.active:
+            self.active = None
+            self.switch_tab()
 
-    def switch_tab(self, frame):
+    def tab_by_frame(self, frame):
+        """
+        @return tuple(index, tab)
+        """
+        for i, t in enumerate(self.tabs):
+            if t.frame == frame:
+                return i, t
+        raise Exception("The specified frame doesn't exist.")
+
+    def switch_tab(self, frame=None):
         """
         @param frame is tk.Frame instance
         """
-        if self._active == frame:
-            return
-        #
-        if self._active:
-            self._tabs[self._active].config(relief=tk.SUNKEN, state=tk.NORMAL)
-            self._active.pack_forget()
-        frame.pack(side=tk.BOTTOM, expand=tk.YES, fill=tk.BOTH)
-        self._tabs[frame].config(relief=tk.FLAT, state=tk.DISABLED)
-        self._active = frame
+        if frame is None:
+            if len(self.tabs) > 0:
+                frame = self.tabs[-1].frame
+            else:
+                return
 
-    def exists(self, caption):
-        return any(b['text'] == caption for b in self._tabs.itervalues())
+        # draw previous active as grey rectangle
+        if self.active:
+            if self.active == frame:
+                return
+            index, _ = self.tab_by_frame(self.active)
+            self.draw_tab(index, False)
+            self.active.pack_forget()
+        frame.pack(side=tk.TOP, expand=tk.YES, fill=tk.BOTH)
+        self.active = frame
+        # draw current active as white button
+        index, _ = self.tab_by_frame(frame)
+        self.draw_tab(index, True)
 
-    def iter_tabs(self):
-        """
-        easier than iterator protocol
-        """
-        for frame in self._tabs:
-            yield frame
+    def on_clicked(self, evt):
+        clicked = self.bar.find_closest(evt.x, evt.y)
+        for t in self.tabs:
+            shapes = [t.caption_id, t.shape_id]
+            if any(i in shapes for i in clicked):
+                return self.switch_tab(t.frame)
 
-    def active(self):
-        return self._active
+    def draw_tab(self, index, is_active):
+        # draw shape
+        tab = self.tabs[index]
+        self.bar.delete(tab.shape_id)  # delete old shape
+        if is_active:
+            # create new shape
+            if index == 0:
+                x0 = TabBarFrame.MARGIN
+                y0 = TabBarFrame.MARGIN
+                points = [(x0, y0)]      # point 1 (top-left corner)
+                x0 += self.TAB_W
+                points.append((x0, y0))  # point 2
+                y0 += TabBarFrame.TAB_H
+                points.append((x0, y0))  # point 3
+                x0 = self.winfo_width() - TabBarFrame.MARGIN - 1  # can't be used in __init__()
+                points.append((x0, y0))  # point 4
+                y0 += TabBarFrame.FOOTER_H
+                points.append((x0, y0))  # point 5
+                x0 = TabBarFrame.MARGIN
+                points.append((x0, y0))  # point 6
+                tab.shape_id = self.bar.create_polygon(*points, outline='black', fill='')
+            else:
+                x0 = TabBarFrame.MARGIN + index * self.TAB_W
+                y0 = TabBarFrame.MARGIN
+                points = [(x0, y0)]      # point 1 (top-left corner)
+                x0 += self.TAB_W
+                points.append((x0, y0))  # point 2
+                y0 += TabBarFrame.TAB_H
+                points.append((x0, y0))  # point
+                x0 = self.winfo_width() - TabBarFrame.MARGIN - 1
+                points.append((x0, y0))  # point
+                y0 += TabBarFrame.FOOTER_H
+                points.append((x0, y0))  # point
+                x0 = TabBarFrame.MARGIN
+                points.append((x0, y0))  # point
+                y0 -= TabBarFrame.FOOTER_H
+                points.append((x0, y0))  # point
+                x0 = TabBarFrame.MARGIN + index * self.TAB_W
+                points.append((x0, y0))  # point
+                tab.shape_id = self.bar.create_polygon(*points, outline='black', fill='')
+        else:
+            x0 = TabBarFrame.MARGIN + index * self.TAB_W
+            y0 = TabBarFrame.MARGIN
+            x1 = x0 + self.TAB_W
+            y1 = y0 + TabBarFrame.TAB_H
+            tab.shape_id = self.bar.create_rectangle(x0, y0, x1, y1, fill='grey')
+        # draw text
+        if tab.caption_id == 0:
+            btn_width = self.TAB_W - TabBarFrame.PADDING * 2
+            if tab.has_close_button():
+                btn_width -= TabBarFrame.CLOSE_W
+            req_width = TabBarFrame.text_font.measure(tab.caption)
+            x = TabBarFrame.MARGIN + index * self.TAB_W
+            y = TabBarFrame.MARGIN
+            center_pos = (x+btn_width/2+TabBarFrame.PADDING, y+TabBarFrame.TAB_H/2)
+            if req_width > btn_width:
+                caption = '%s...' % self.sub_str_by_width(tab.caption, btn_width)
+                tab.caption_id = self.bar.create_text(*center_pos, text=caption)
+                self.enable_tip(tab)
+            else:
+                tab.caption_id = self.bar.create_text(*center_pos, text=tab.caption)
+        else:
+            self.bar.tag_lower(tab.shape_id, tab.caption_id)
+        # draw close button
+        if tab.need_button():
+            x = TabBarFrame.MARGIN + (index+1) * self.TAB_W
+            y = TabBarFrame.MARGIN
+            center_pos = (x-TabBarFrame.CLOSE_W/2, y+TabBarFrame.TAB_H/2)
+            tab.close_btn = self.bar.create_text(*center_pos, text='X')
+            self.bar.tag_bind(tab.close_btn, '<ButtonPress>', lambda e: self.remove(tab.frame))
+
+    def sub_str_by_width(self, text, width):
+        width -= self.text_font.measure('...')  # subtract "..." in advance
+        for i in range(len(text), 0, -1):
+            w = self.text_font.measure(text[:i])
+            if width > w:
+                return text[:i]
+        return ''
+
+    def enable_tip(self, tab):
+        self.tip_wnd = None
+        def show_tip(evt):
+            self.tip_wnd = tk.Toplevel(self.bar)
+            self.tip_wnd.wm_overrideredirect(True)  # remove window title bar
+            label = tk.Label(self.tip_wnd, text=tab.caption, justify=tk.LEFT)
+            label.pack(ipadx=5)
+            x, y = evt.x_root, evt.y_root
+            w, h = label.winfo_reqwidth(), label.winfo_reqheight()
+            sw, sh = label.winfo_screenwidth(), label.winfo_screenheight()
+            offset = 20
+            if x + w + offset > sw:  # if reach beyond the right border
+                x -= w + offset*2    # place tip to the left of widget
+            if y + h + offset > sh:  # if reach beyond the bottom border
+                y -= h + offset*2    # place tip to the top of widget
+            self.tip_wnd.wm_geometry("+%d+%d" % (x+offset, y+offset))
+        def hide_tip(evt):
+            if self.tip_wnd:
+                self.tip_wnd.destroy()
+        self.bar.tag_bind(tab.caption_id, "<Enter>", show_tip)
+        self.bar.tag_bind(tab.caption_id, "<Leave>", hide_tip)
 
     def count(self):
-        return len(self._tabs)
+        return len(self.tabs)
 
 
-class MultiTabEditor(TabBox):
-    WIDTH_ACTIVE = 20
-    WIDTH_HIDDEN = 10
+class MultiTabEditor(TabBarFrame):
     EVENT_SWITCH = '<<SwitchTab>>'
 
     def __init__(self, master, *a, **kw):
-        self._captions = {}
         self._font = kw.pop('font', None)
-        TabBox.__init__(self, master, *a, **kw)
+        TabBarFrame.__init__(self, master, *a, **kw)
 
     def add(self, editor, caption):
         """
@@ -829,72 +978,47 @@ class MultiTabEditor(TabBox):
         It's used internally through overriding.
         Use below new_editor instead.
         """
-        self._captions[editor] = caption
-        caption = self.fake_caption_(editor)
-        #
-        TabBox.add(self, editor, caption)
-        # the full tab title
-        CreateToolTip(self._tabs[editor], self._captions[editor])
+        TabBarFrame.add(self, editor, caption)
         #
         editor.bind(TextEditor.EVENT_CLEAN, self.event_caption_)
         editor.bind(TextEditor.EVENT_DIRTY, self.event_caption_)
 
-    def remove(self, editor=None, caption=None):
-        if caption is not None:
-            try:
-                editor = [f for (f, c) in self._captions.iteritems() if c == caption][0]
-            except IndexError as e:
-                return
-        TabBox.remove(self, editor)
-        #
-        if editor in self._captions:
-            del self._captions[editor]
-
-    def switch_tab(self, editor):
-        if self._active == editor:
-            return
-        #
-        if self._active is not None:
-            self._tabs[self._active].config(text=self.fake_caption_(self._active))
-        TabBox.switch_tab(self, editor)
-        self._tabs[editor].config(text=self.fake_caption_(editor, True))
+    def switch_tab(self, editor=None):
+        TabBarFrame.switch_tab(self, editor)
         self.event_generate(MultiTabEditor.EVENT_SWITCH, when='tail')
 
     def exists(self, caption):
-        return any(c == caption for c in self._captions.itervalues())
+        return any(t.caption == caption for t in self.tabs)
 
     def set_caption(self, editor, caption):
-        btn = self._tabs[editor]
-        self._captions[editor] = caption
-        active = (btn.cget('state') == tk.DISABLED)
-        btn.config(text=self.fake_caption_(editor, active))
-        CreateToolTip(btn, caption)
-
-    def reset_caption(self, editor):
-        if editor not in self._tabs:
-            return
-        btn = self._tabs[editor]
-        active = (btn.cget('state') == tk.DISABLED)
-        btn.config(text=self.fake_caption_(editor, active))
+        index, tab = self.tab_by_frame(editor)
+        assert isinstance(tab, TabBarTab)
+        tab.caption = caption
+        self.refresh_caption_(tab, editor.modified())
 
     def get_caption(self, editor):
-        return self._captions[editor] if editor in self._captions else ''
+        index, tab = self.tab_by_frame(editor)
+        return tab.caption
 
-    def fake_caption_(self, editor, active=False):
-        """
-        the caption displaying on the tab-bar.
-        If it's too long, give it a shorter one.
-        """
-        limit = MultiTabEditor.WIDTH_ACTIVE if active else MultiTabEditor.WIDTH_HIDDEN
-        caption = self._captions[editor]
-        if editor.modified():
-            caption = '* %s' % caption
-        if len(caption) > limit:
-            caption = '%s...' % caption[:limit-3]
-        return caption
+    def refresh_caption_(self, tab, modified):
+        if modified:
+            caption = '* %s' % tab.caption
+        else:
+            caption = tab.caption
+        #
+        btn_width = self.TAB_W - TabBarFrame.PADDING * 2
+        if tab.has_close_button():
+            btn_width -= TabBarFrame.CLOSE_W
+        req_width = TabBarFrame.text_font.measure(caption)
+        if req_width > btn_width:
+            caption = '%s...' % self.sub_str_by_width(caption, btn_width)
+            self.enable_tip(tab)
+        self.bar.itemconfig(tab.caption_id, text=caption)
 
     def event_caption_(self, evt):
-        self.reset_caption(evt.widget)
+        editor = evt.widget
+        index, tab = self.tab_by_frame(editor)
+        self.refresh_caption_(tab, editor.modified())
 
     def new_editor(self, caption):
         number = 1
@@ -912,13 +1036,16 @@ class MultiTabEditor(TabBox):
         self.add(editor, new_name)
         return editor
 
-    def iter_texts(self):
-        for t in self.iter_tabs():
-            yield t.core()
+    def iter_tabs(self):
+        """
+        easier than iterator protocol
+        """
+        for t in self.tabs:
+            yield t.frame
 
     def close_all(self):
-        tabs = [i for i in self.iter_tabs()]
-        map(lambda t: self.remove(t), tabs)
+        frames = [i for i in self.iter_tabs()]
+        map(lambda i: self.remove(i), frames)
 
 
 class ModalDialog(tk.Toplevel):
