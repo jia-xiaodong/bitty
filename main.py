@@ -137,16 +137,14 @@ class TagPicker(tk.Frame):
                 hidden.append(i)
         if len(hidden) < len(children):
             return False
+        # not in children, do a case-insensitive compare with itself.
         name = self._tree.item(iid, 'text')
-        if name.find(keyword) >= 0:
+        if keyword.lower() in name.lower():
+            self._tree.see(iid)
             return False
-        # if parent is removed, the children would vanish too.
-        if len(hidden) == len(children) > 0:
-            for i in children:
-                for j in self._filtered[:]:
-                    if j.iid == i:
-                        self._filtered.remove(j)
-                        break
+        # Because parent is removed (detached), the children would vanish automatically.
+        # So no need to filter them again.
+        self._filtered[:] = [i for i in self._filtered if i.iid not in children]
         return True
 
     def select_tag_(self, evt=None):
@@ -700,7 +698,7 @@ class OpenDocDlg(jtk.ModalDialog):
         self._note_list.column('ID', width=20, minwidth=20)
         self._note_list.heading('ID', text='ID', command=self.sort_by_id_)
         self._note_list.heading('Title', text='Title')
-        width = tkFont.Font().measure('1999-99-99')
+        width = tkFont.Font().measure('9999-99-99')
         self._note_list.column('Date', width=width, minwidth=width)
         self._note_list.heading('Date', text='Date', command=self.sort_by_date_)
 
