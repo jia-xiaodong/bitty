@@ -129,6 +129,7 @@ class TagPicker(tk.Frame):
 
     def filter_node_(self, iid, keyword):
         hidden = []
+        # depth-first search in children nodes
         children = self._tree.get_children(iid)
         for i in children:
             if self.filter_node_(i, keyword):
@@ -137,7 +138,7 @@ class TagPicker(tk.Frame):
                 hidden.append(i)
         if len(hidden) < len(children):
             return False
-        # not in children, do a case-insensitive compare with itself.
+        # since not in children, do a case-insensitive comparison with itself.
         name = self._tree.item(iid, 'text')
         if keyword.lower() in name.lower():
             self._tree.see(iid)
@@ -182,7 +183,7 @@ class TagPicker(tk.Frame):
         self._store.insert_tag(tag)
         self._tags.append(tag)
         iid = self._tree.insert('', tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
-        self.show_rename_entry_(iid)
+        self.schedule_show_rename_entry(iid)
 
     def del_node_(self):
         iid = self._tree.focus()
@@ -202,11 +203,15 @@ class TagPicker(tk.Frame):
         self._store.insert_tag(tag)
         selected_tag.add_child(tag)
         child = self._tree.insert(iid, tk.END, text=TagPicker.UNNAMED, values=tag.sn, tags='node', open=True)
-        self.show_rename_entry_(child)
+        self.schedule_show_rename_entry(child)
 
-    def show_rename_entry_(self, iid):
+    def schedule_show_rename_entry(self, iid):
         self._tree.see(iid)
         self._tree.focus(iid)
+        # wait a period of time for node to be visible (see).
+        self.after(50, lambda: self.show_rename_entry_(iid))
+
+    def show_rename_entry_(self, iid):
         x, y, w, h = self._tree.bbox(iid)
         self._naming.set(self._tree.item(iid, 'text'))
         self._entry.place(x=x, y=y, width=w, height=h)
