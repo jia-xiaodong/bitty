@@ -4,21 +4,38 @@
 """
 An enhancement to Tkinter.
 """
+import jex
 
-import Tkinter as tk
-import ttk
+if jex.isPython3():
+    import tkinter as tk
+    from tkinter import ttk
+    import tkinter.messagebox as tkMessageBox
+    import tkinter.filedialog as tkFileDialog
+    import tkinter.font as tkFont
+else:
+    import Tkinter as tk
+    import ttk
+    import tkFileDialog
+    import tkFont
+
 import calendar
 import datetime
-import tkFont
 import math
-import tkFileDialog
+
 from PIL import Image, ImageSequence, ImageTk
 from sys import platform
-import jex
+
 import json
 
 
-PLATFORM = jex.enum1(Darwin=0, Win=1)
+if jex.isPython3():
+    from enum import Enum
+    class PLATFORM(Enum):
+        Darwin = 0
+        Win = 1
+else:
+    PLATFORM = jex.enum1(Darwin=0, Win=1)
+
 curr_os = PLATFORM.Darwin if platform.startswith('darwin') else PLATFORM.Win
 
 '''
@@ -332,13 +349,14 @@ class ModifiedMixin:
       1. subclass from Tkinter.Text and the mixin, then write
       an __init__() method for the new class that calls __init__().
 
-      2. Then override the beenModified() method to implement the behavior
+      2. Then override the been_modified() method to implement the behavior
       that you want to happen when the Text is modified.
     """
 
     def __init__(self):
         self.clear_modified_flag_()
-        self.bind('<<Modified>>', self.event_fired_)  # built-in virtual event
+        self.ignoreNextEvent = True # force to ignore 1st <<Modified>> event fired by below binding
+        self.bind('<<Modified>>', self.event_fired_)  # this "binding" will fire a <<Modified>> event. What an ugly bug!
 
     def been_modified(self, event=None):
         """
@@ -347,21 +365,23 @@ class ModifiedMixin:
         pass
 
     def event_fired_(self, event=None):
-        if self.clearing_:
-            return
+        if self.ignoreNextEvent:
+            if self.edit_modified():
+                self.edit_modified(False)
+            else:
+                self.ignoreNextEvent = False
+            return # ignore this event
+
+        # normal <<Modified>> event
         self.been_modified(event)
         #
         # if no manual resetting, <<Modified>> event won't fire again
         self.clear_modified_flag_()
 
     def clear_modified_flag_(self):
-        self.clearing_ = True
-        try:
-            # Set 'modified' to 0.  This will also trigger the <<Modified>> virtual event
-            # So we need set above sentinel.
-            self.tk.call(self._w, 'edit', 'modified', 0)
-        finally:
-            self.clearing_ = False
+        if self.edit_modified():
+            self.edit_modified(False)
+            self.ignoreNextEvent = True
 
 
 class NotifiedText(tk.Text, ModifiedMixin):
@@ -374,7 +394,7 @@ class NotifiedText(tk.Text, ModifiedMixin):
         self._event_listeners = {}
         #self._event_count = {}  # debug
 
-    def add_listeners(self, event, listener):
+    def add_listener(self, event, listener):
         """
         @param listener is tkInter widget, which support method .event_generate()
         """
@@ -448,8 +468,8 @@ class LineNumberBar(tk.Canvas):
         self.binding_keys_()
 
         # text should notify canvas when event is fired
-        self._text.add_listeners(NotifiedText.EVENT_MODIFIED, self)
-        self._text.add_listeners(NotifiedText.EVENT_VIEW_CHG, self)
+        self._text.add_listener(NotifiedText.EVENT_MODIFIED, self)
+        self._text.add_listener(NotifiedText.EVENT_VIEW_CHG, self)
 
         # use a font to measure the width of canvas required to hold digits
         if LineNumberBar.DIGIT_WIDTH == 0:
@@ -566,15 +586,24 @@ class TextOperationSet:
     def custom_ops_(self):
         bindings = ['<Mod1-a>', '<Control-a>']
         self._ops['SelectAll'] = self.select_all
-        self._txt.bind(bindings[curr_os], self.select_all)
+        if jex.isPython3():
+            self._txt.bind(bindings[curr_os.value], self.select_all)
+        else:
+            self._txt.bind(bindings[curr_os], self.select_all)
         #
         bindings = ['<Mod1-Up>', '<Control-Up>']
         self._ops['Top'] = self.jump_top
-        self._txt.bind(bindings[curr_os], self.jump_top)
+        if jex.isPython3():
+            self._txt.bind(bindings[curr_os.value], self.jump_top)
+        else:
+            self._txt.bind(bindings[curr_os], self.jump_top)
         #
         bindings = ['<Mod1-Down>', '<Control-Down>']
         self._ops['Bottom'] = self.jump_bottom
-        self._txt.bind(bindings[curr_os], self.jump_bottom)
+        if jex.isPython3():
+            self._txt.bind(bindings[curr_os.value], self.jump_bottom)
+        else:
+            self._txt.bind(bindings[curr_os], self.jump_bottom)
         #
         if curr_os == PLATFORM.Darwin:
             self._txt.bind('<Mod1-Left>', self._ops['LineStart'])
@@ -726,7 +755,7 @@ class TextEditor(tk.Frame):
         self.event_generate(evt, when='tail')
 
     def monitor_change(self):
-        self._txt.add_listeners(NotifiedText.EVENT_MODIFIED, self)
+        self._txt.add_listener(NotifiedText.EVENT_MODIFIED, self)
         self.bind(NotifiedText.EVENT_MODIFIED, self.on_modified, True)
 
     def operation(self, index):
@@ -1045,7 +1074,9 @@ class MultiTabEditor(TabBarFrame):
 
     def close_all(self):
         frames = [i for i in self.iter_tabs()]
-        map(lambda i: self.remove(i), frames)
+        #map(lambda i: self.remove(i), frames)
+        for i in frames:
+            self.remove(i)
 
 
 class ModalDialog(tk.Toplevel):
@@ -1450,7 +1481,10 @@ class ImageBox(tk.Canvas, StorageMixin):
 
     def display_(self, evt=None):
         scale = self._scale.get()
-        new_w, new_h = self._src.width*scale/100, self._src.height*scale/100
+        if jex.isPython3():
+            new_w, new_h = self._src.width*scale//100, self._src.height*scale//100
+        else:
+            new_w, new_h = self._src.width*scale/100, self._src.height*scale/100
         # resize canvas to accommodate image
         if self._dst is None:
             self.config(width=new_w, height=new_h)

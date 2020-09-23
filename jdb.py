@@ -11,9 +11,28 @@ import jex
 import zlib
 import hashlib
 
+if jex.isPython3():
+    from enum import Enum
+    class DocCols(Enum):
+        id = 0
+        title = 1
+        text = 2
+        bulk = 3
+        tags = 4
+        date = 5
+        COUNT = 6
 
-DocCols = jex.enum2('id', 'title', 'text', 'bulk', 'tags', 'date', 'COUNT')
-TagCols = jex.enum2('id', 'name', 'base', 'COUNT')
+
+    class TagCols(Enum):
+        id = 0
+        name = 1
+        base = 2
+        COUNT = 3
+
+
+else: # Python 2.x
+    DocCols = jex.enum2('id', 'title', 'text', 'bulk', 'tags', 'date', 'COUNT')
+    TagCols = jex.enum2('id', 'name', 'base', 'COUNT')
 
 
 class DBRecordTag(object):
@@ -431,9 +450,11 @@ class DocBase(object):
     def insert_tag(self, tag):
         try:
             cur = self._con.cursor()
-            cur.execute('INSERT INTO tags (%s, %s) VALUES(?,?)' %
-                        (TagCols.name[1], TagCols.name[2]),
-                        (tag.name, tag.parent))
+            if jex.isPython3():
+                columns = (TagCols(1).name, TagCols(2).name)
+            else:
+                columns = (TagCols.name[1], TagCols.name[2])
+            cur.execute('INSERT INTO tags (%s, %s) VALUES(?,?)' % columns, (tag.name, tag.parent))
             tag.sn = cur.lastrowid
             self._con.commit()
         except Exception as e:
@@ -490,8 +511,12 @@ class DocBase(object):
         try:
             with sqlite3.connect(filename) as con:
                 cur = con.cursor()
-                tables = {'docs': [DocCols.name[i] for i in range(DocCols.COUNT)],
-                          'tags': [TagCols.name[i] for i in range(TagCols.COUNT)]}
+                if jex.isPython3():
+                    tables = {'docs': [DocCols(i).name for i in range(DocCols.COUNT.value)],
+                              'tags': [TagCols(i).name for i in range(TagCols.COUNT.value)]}
+                else:
+                    tables = {'docs': [DocCols.name[i] for i in range(DocCols.COUNT)],
+                              'tags': [TagCols.name[i] for i in range(TagCols.COUNT)]}
                 return all(is_column_identical(cur, i, j) for i, j in tables.items())
         except:
             return False

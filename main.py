@@ -1,11 +1,25 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import sys
+import jex
 
-import Tkinter as tk
-import ttk
-import tkMessageBox
-import tkFileDialog
-import tkFont
+if jex.isPython3():
+    import tkinter as tk
+    from tkinter import ttk
+    import tkinter.messagebox as tkMessageBox
+    import tkinter.filedialog as tkFileDialog
+    import tkinter.font as tkFont
+
+    from enum import Enum
+    from functools import cmp_to_key
+
+else:
+    import Tkinter as tk
+    import ttk
+    import tkMessageBox
+    import tkFileDialog
+    import tkFont
+
 import jdb, jtk, jex
 import os
 import datetime
@@ -81,7 +95,9 @@ class TagPicker(tk.Frame):
         self._tree.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         self._tree.bind('<2>', self.on_popup_menu_)
         self._tree.bind('<Double-1>', self.select_tag_)
-        map(lambda i: self.draw_tags_('', i), self._tags)
+        #map(lambda i: self.draw_tags_('', i), self._tags)
+        for i in self._tags:
+            self.draw_tags_('', i)
         self._moved_node = None  # tag can be moved to another tag as its child
         self._been_shown = False # show this menu item only once
         #
@@ -91,7 +107,9 @@ class TagPicker(tk.Frame):
         self._list.pack(fill=tk.BOTH, expand=tk.YES)
         self._list.bind('<BackSpace>', self.deselect_tag_)
         self._list.bind('<Double-1>', self.deselect_tag_)
-        map(lambda i: self._list.insert(tk.END, i.name), self._selected)
+        #map(lambda i: self._list.insert(tk.END, i.name), self._selected)
+        for i in self._selected:
+            self._list.insert(tk.END, i.name)
         #
         # "self._name" seems to be reserved in somewhere.
         # If used, ridiculous exception would be raised (unhashable object) when destroyed
@@ -112,7 +130,9 @@ class TagPicker(tk.Frame):
 
     def on_query_(self, evt):
         # 1. restore
-        map(lambda i: self._tree.move(i.iid, i.parent, i.index), self._filtered)
+        #map(lambda i: self._tree.move(i.iid, i.parent, i.index), self._filtered)
+        for i in self._filtered:
+            self._tree.move(i.iid, i.parent, i.index)
         del self._filtered[:]
         # 2.
         keyword = self._query.get().strip(' \n')
@@ -163,7 +183,9 @@ class TagPicker(tk.Frame):
                 break
         self._selected.append(target)
         self._list.delete(0, tk.END)
-        map(lambda i: self._list.insert(tk.END, i.name), self._selected)
+        #map(lambda i: self._list.insert(tk.END, i.name), self._selected)
+        for i in self._selected:
+            self._list.insert(tk.END, i.name)
 
     def deselect_tag_(self, evt):
         text = self._list.get(tk.ACTIVE)
@@ -914,7 +936,7 @@ class TipManager(object):
         tip_tags = [i for i in text.tag_names() if i.startswith(TipManager.prefix)]
         keys = [TipManager.sn_from_tag(i) for i in tip_tags]
         # clear unused strings
-        unused = [i for i in self._tips[text].iterkeys() if i not in keys]
+        unused = [i for i in self._tips[text].keys() if i not in keys]
         for i in unused:
             del self._tips[text][i]
         # find the smallest index free to use
@@ -984,7 +1006,10 @@ class TipManager(object):
                     continue
                 tip_tags.append((i, text.index(ranges[0]), text.index(ranges[1])))
         # the purpose of sort is only one: digest comparison
-        tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1)
+        if jex.isPython3():
+            tip_tags.sort(key=cmp_to_key(lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1))
+        else:
+            tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1)
         for t, s, e in tip_tags:
             txt = self.get_content(text, t)
             formats.append(dict(start=s, end=e, text=txt))
@@ -1106,12 +1131,25 @@ class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
     #
-    SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2)
+    if jex.isPython3():
+        class SAVE(Enum):
+            Finish = 0
+            FailContent = 1
+            FailTitle = 2
+    else:
+        SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2)
+
     # All text editors are using same font
     DEFAULT_FONT = 'Helvetica' if platform == 'darwin' else 'Courier'
     DEFAULT_SIZE = 18
     #
-    RELY = jex.enum1(DB=0, DOC=1)
+    if jex.isPython3():
+        class RELY(Enum):
+            DB = 0
+            DOC = 1
+    else:
+        RELY = jex.enum1(DB=0, DOC=1)
+
     EVENT_DB_EXIST = '<<DBExist>>'    # sent when database is opened / closed.
     EVENT_DOC_EXIST = '<<DocExist>>'  # sent when first document opened / last document closed.
 
@@ -1124,6 +1162,11 @@ class MainApp(tk.Tk):
         self.misc_()
 
     def init_menu_(self):
+        if jex.isPython3():
+            top_start = 1
+        else:
+            top_start = 0
+
         menu_bar = tk.Menu(self)
         # database
         menu = tk.Menu(menu_bar, tearoff=0)
@@ -1152,7 +1195,7 @@ class MainApp(tk.Tk):
         menu.add_command(label='Copy to Other DB', command=self.doc_copy_elsewhere_)
         self.add_listener(menu, MainApp.EVENT_DB_EXIST, 6)
         menu_bar.add_cascade(label='Document', menu=menu)
-        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 1)
+        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start+1)
         # edit
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='Insert Image File', command=self.edit_insert_image_)
@@ -1174,7 +1217,7 @@ class MainApp(tk.Tk):
         menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 9)
         menu_bar.add_cascade(label='Edit', menu=menu)
-        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, 2)
+        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start+2)
         # help
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='About', command=self.menu_help_about_)
@@ -1391,7 +1434,7 @@ class MainApp(tk.Tk):
         if dlg.result is None:
             return
         indices, self._last_search = dlg.result
-        opened = {n:e for e, n in self._notes.iteritems()}
+        opened = {n:e for e, n in self._notes.items()}
         for i in indices:
             note = self._last_search.hits[i]
             # self._last_search.hits may contains the same doc to the ones in self._notes.
@@ -1594,7 +1637,9 @@ At the age of 40.
 
     def notify_db_ops_(self, evt):
         state = tk.NORMAL if evt.state else tk.DISABLED
-        map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DB_EXIST])
+        for w in self._relied[MainApp.EVENT_DB_EXIST]:
+            w.set_state(state)
+        #map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DB_EXIST])
         #
         if evt.state:
             self.bind('<Command-n>', self.menu_doc_new_)
@@ -1605,7 +1650,9 @@ At the age of 40.
 
     def notify_doc_ops_(self, evt):
         state = tk.NORMAL if evt.state else tk.DISABLED
-        map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DOC_EXIST])
+        for w in self._relied[MainApp.EVENT_DOC_EXIST]:
+            w.set_state(state)
+        #map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DOC_EXIST])
         #
         if evt.state:
             self.bind('<Mod1-s>', self.menu_doc_save_)
@@ -1692,7 +1739,7 @@ At the age of 40.
         editor = self._editor.active
         core = editor.core()
         if len(images) == 1:
-            image = jtk.ImageBox(core, image=open(images[0]), ext=os.path.splitext(images[0])[1])
+            image = jtk.ImageBox(core, image=open(images[0], 'rb'), ext=os.path.splitext(images[0])[1])
             core.window_create(tk.INSERT, window=image)
         else:
             # a hidden trick: copy start-number from clipboard
@@ -1822,14 +1869,17 @@ At the age of 40.
         textual = {}
         #
         windows = text.window_names()
-        if len(windows) > 0 and isinstance(windows[0], basestring):
+        if len(windows) > 0 and jex.is_str(windows[0]):
             windows = map(text.nametowidget, windows)  # name is converted to widget object
         #
         # Use "?" as placeholder which will be replaced by genuine widget when loading from
         # database in future. With the help of a placeholder, it's easy to insert window to
         # tk.Text by original position.
         windows = [w for w in windows if isinstance(w, jtk.StorageMixin)]
-        windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
+        if jex.isPython3():
+            windows.sort(key=cmp_to_key(lambda i, j: -1 if text.compare(i, '<', j) else 1))
+        else:
+            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
         for w in windows:
             row, col = text.index(w).split('.')
             row, col = int(row) - 1, int(col)
@@ -1853,7 +1903,7 @@ At the age of 40.
         binary = buf.getvalue()
         # even if buffer is empty, it still contains magic head bytes
         if len(binary) == len(jex.FilePile.MAGIC_HEAD):
-            binary = ''
+            binary = b''
         # 3. tables
         tables = []
         for w in [w for w in windows if isinstance(w, jtk.TextTableBox)]:

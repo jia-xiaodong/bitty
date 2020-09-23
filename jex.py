@@ -8,40 +8,53 @@ are all placed here.
 
 import functools
 import struct
-import io
+import io, sys
+
+def isPython3():
+    if sys.version > '3':
+        return True
+    return False
 
 
-def enum1(*sequential, **named):
-    """
-    @param sequential:
-    @param named:
-    @return: a dynamically created enum.
-
-    Because in Python prior to 3.4, there's no built-in enum definition. So we have to
-    make it ourselves.
-    use case:
-      Numbers = enum1('ZERO', 'ONE', 'TWO')        --> Numbers.ZERO (aka. 0), Numbers.ONE (aka. 1)
-      Numbers = enum1(ONE=1, TWO=2, THREE='three') --> Numbers.THREE (aka. 'three')
-      getattr(Numbers, 'TWO') --> Numbers.TWO      --> 2
-    """
-    enums = dict(zip(sequential, range(len(sequential))), **named)
-    return type('Enum', (), enums)  # builtin function: type(new_cls_name, bases, attrs)
+def is_str(s):
+    if isPython3():
+        return isinstance(s, str)
+    else:
+        return isinstance(s, basestring)
 
 
-def enum2(*sequential, **named):
-    """
-    A more powerful enum creation than above
-    @param sequential:
-    @param named:
-    @return: a dynamically created enum.
-    this enum has not only above functions, but also a reverse indexing, such as:
-    Numbers.name[1]        --> 'ONE'
-    Numbers.name['three']  --> 'THREE'
-    """
-    enums = dict(zip(sequential, range(len(sequential))), **named)
-    reverse = dict((value, key) for key, value in enums.iteritems())
-    enums['name'] = reverse
-    return type('Enum', (), enums)
+if not isPython3():
+    def enum1(*sequential, **named):
+        """
+        @param sequential:
+        @param named:
+        @return: a dynamically created enum.
+
+        Because in Python prior to 3.4, there's no built-in enum definition. So we have to
+        make it ourselves.
+        use case:
+          Numbers = enum1('ZERO', 'ONE', 'TWO')        --> Numbers.ZERO (aka. 0), Numbers.ONE (aka. 1)
+          Numbers = enum1(ONE=1, TWO=2, THREE='three') --> Numbers.THREE (aka. 'three')
+          getattr(Numbers, 'TWO') --> Numbers.TWO      --> 2
+        """
+        enums = dict(zip(sequential, range(len(sequential))), **named)
+        return type('Enum', (), enums)  # builtin function: type(new_cls_name, bases, attrs)
+
+
+    def enum2(*sequential, **named):
+        """
+        A more powerful enum creation than above
+        @param sequential:
+        @param named:
+        @return: a dynamically created enum.
+        this enum has not only above functions, but also a reverse indexing, such as:
+        Numbers.name[1]        --> 'ONE'
+        Numbers.name['three']  --> 'THREE'
+        """
+        enums = dict(zip(sequential, range(len(sequential))), **named)
+        reverse = dict((value, key) for key, value in enums.iteritems())
+        enums['name'] = reverse
+        return type('Enum', (), enums)
 
 
 class InvalidArgumentTypeError(ValueError):
@@ -140,7 +153,7 @@ class FilePile:
       So I have to make one by myself.
       This class only put a few files together into one big file.
     """
-    MAGIC_HEAD = 'jxd'
+    MAGIC_HEAD = b'jxd'
     #
     TYPE_FILENAME = 0
     TYPE_CONTENT = 1
