@@ -93,7 +93,7 @@ class TagPicker(tk.Frame):
                                   show='tree',  # three options: '<Empty>', 'headings', 'tree'
                                   selectmode='browse')
         self._tree.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
-        self._tree.bind('<2>', self.on_popup_menu_)
+        self._tree.bind(jex.mouse_right_button(), self.on_popup_menu_)
         self._tree.bind('<Double-1>', self.select_tag_)
         #map(lambda i: self.draw_tags_('', i), self._tags)
         for i in self._tags:
@@ -1553,13 +1553,13 @@ At the age of 40.
         self.event_generate(MainApp.EVENT_DOC_EXIST, state=0)
         #
         # enhance tk.Entry with more hot keys
-        self.bind_class('Entry', '<Mod1-a>', EntryOps.select_all)
-        self.bind_class('Entry', '<Mod1-A>', EntryOps.select_all)
-        self.bind_class('Entry', '<Mod1-Left>', EntryOps.jump_to_start)
-        self.bind_class('Entry', '<Mod1-Right>', EntryOps.jump_to_end)
-        self.bind_class('Entry', '<Mod1-C>', EntryOps.copy)
-        self.bind_class('Entry', '<Mod1-X>', EntryOps.cut)
-        self.bind_class('Entry', '<Mod1-V>', EntryOps.paste)
+        self.bind_class('Entry', '<Control-a>', EntryOps.select_all)
+        self.bind_class('Entry', '<Control-A>', EntryOps.select_all)
+        self.bind_class('Entry', '<Control-Left>', EntryOps.jump_to_start)
+        self.bind_class('Entry', '<Control-Right>', EntryOps.jump_to_end)
+        self.bind_class('Entry', '<Control-C>', EntryOps.copy)
+        self.bind_class('Entry', '<Control-X>', EntryOps.cut)
+        self.bind_class('Entry', '<Control-V>', EntryOps.paste)
         #
         jdb.DocBase.assign_finder(self.find_words)
 
@@ -1655,15 +1655,15 @@ At the age of 40.
         #map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DOC_EXIST])
         #
         if evt.state:
-            self.bind('<Mod1-s>', self.menu_doc_save_)
-            self.bind('<Mod1-S>', self.menu_doc_save_)
-            self.bind('<Mod1-f>', self.menu_edit_find_)
-            self.bind('<Mod1-F>', self.menu_edit_find_)
+            self.bind('<Control-s>', self.menu_doc_save_)
+            self.bind('<Control-S>', self.menu_doc_save_)
+            self.bind('<Control-f>', self.menu_edit_find_)
+            self.bind('<Control-F>', self.menu_edit_find_)
         else:
-            self.unbind('<Mod1-s>')
-            self.unbind('<Mod1-S>')
-            self.unbind('<Mod1-f>')
-            self.unbind('<Mod1-F>')
+            self.unbind('<Control-s>')
+            self.unbind('<Control-S>')
+            self.unbind('<Control-f>')
+            self.unbind('<Control-F>')
 
     def edit_underline_(self):
         self.toggle_format_('underline')

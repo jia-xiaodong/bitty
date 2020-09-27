@@ -28,15 +28,7 @@ from sys import platform
 import json
 
 
-if jex.isPython3():
-    from enum import Enum
-    class PLATFORM(Enum):
-        Darwin = 0
-        Win = 1
-else:
-    PLATFORM = jex.enum1(Darwin=0, Win=1)
-
-curr_os = PLATFORM.Darwin if platform.startswith('darwin') else PLATFORM.Win
+curr_os = jex.PLATFORM.Darwin if platform.startswith('darwin') else jex.PLATFORM.Win
 
 '''
 It's a magic number.
@@ -548,16 +540,16 @@ class TextOperationSet:
             self._ops[i] = lambda e=None, i=i: self.complement_('<<%s>>' % i)
         #
         # bind capital key, too
-        self._txt.bind('<Mod1-X>', self._ops['Cut'])
-        self._txt.bind('<Mod1-x>', self._ops['Cut'])
-        self._txt.bind('<Mod1-C>', self._ops['Copy'])
-        self._txt.bind('<Mod1-c>', self._ops['Copy'])
-        self._txt.bind('<Mod1-V>', self._ops['Paste'])
-        self._txt.bind('<Mod1-v>', self._ops['Paste'])
-        self._txt.bind('<Mod1-Z>', self._ops['Undo'])
-        self._txt.bind('<Mod1-z>', self._ops['Undo'])
-        self._txt.bind('<Mod1-Y>', self._ops['Redo'])
-        self._txt.bind('<Mod1-y>', self._ops['Redo'])
+        self._txt.bind('<Control-X>', self._ops['Cut'])
+        self._txt.bind('<Control-x>', self._ops['Cut'])
+        self._txt.bind('<Control-C>', self._ops['Copy'])
+        self._txt.bind('<Control-c>', self._ops['Copy'])
+        self._txt.bind('<Control-V>', self._ops['Paste'])
+        self._txt.bind('<Control-v>', self._ops['Paste'])
+        self._txt.bind('<Control-Z>', self._ops['Undo'])
+        self._txt.bind('<Control-z>', self._ops['Undo'])
+        self._txt.bind('<Control-Y>', self._ops['Redo'])
+        self._txt.bind('<Control-y>', self._ops['Redo'])
 
     def complement_(self, op):
         self._txt.event_generate(op)
@@ -584,33 +576,24 @@ class TextOperationSet:
             self._ops[evt] = hdl
 
     def custom_ops_(self):
-        bindings = ['<Mod1-a>', '<Control-a>']
+        bindings = ['<Command-a>', '<Control-a>']
         self._ops['SelectAll'] = self.select_all
-        if jex.isPython3():
-            self._txt.bind(bindings[curr_os.value], self.select_all)
-        else:
-            self._txt.bind(bindings[curr_os], self.select_all)
+        index = curr_os.value if jex.isPython3() else curr_os
+        self._txt.bind(bindings[index], self.select_all)
         #
-        bindings = ['<Mod1-Up>', '<Control-Up>']
+        bindings = ['<Command-Up>', '<Control-Up>']
         self._ops['Top'] = self.jump_top
-        if jex.isPython3():
-            self._txt.bind(bindings[curr_os.value], self.jump_top)
-        else:
-            self._txt.bind(bindings[curr_os], self.jump_top)
+        self._txt.bind(bindings[index], self.jump_top)
         #
-        bindings = ['<Mod1-Down>', '<Control-Down>']
+        bindings = ['<Command-Down>', '<Control-Down>']
         self._ops['Bottom'] = self.jump_bottom
-        if jex.isPython3():
-            self._txt.bind(bindings[curr_os.value], self.jump_bottom)
-        else:
-            self._txt.bind(bindings[curr_os], self.jump_bottom)
+        self._txt.bind(bindings[index], self.jump_bottom)
         #
-        if curr_os == PLATFORM.Darwin:
-            self._txt.bind('<Mod1-Left>', self._ops['LineStart'])
-            self._txt.bind('<Mod1-Right>', self._ops['LineEnd'])
-        elif curr_os == PLATFORM.Win:
-            # TODO:
-            pass
+        bindings = ['<Command-Left>', '<Control-Left>']
+        self._txt.bind(bindings[index], self._ops['LineStart'])
+
+        bindings = ['<Command-Right>', '<Control-Right>']
+        self._txt.bind(bindings[index], self._ops['LineEnd'])
 
     def line_start(self, evt=None):
         curr = self._txt.index(tk.INSERT)
@@ -1512,7 +1495,7 @@ class ImageBox(tk.Canvas, StorageMixin):
             src = self._src
         src = src.resize((new_w, new_h))
         # [bug-fix] Mac tkinter Canvas doesn't support RGBA image.
-        if 'A' in Image.getmodebandnames(src.mode) and curr_os == PLATFORM.Darwin:
+        if 'A' in Image.getmodebandnames(src.mode) and jex.is_macos():
             bg_color = self.winfo_rgb(self.cget('background'))
             bg_color = tuple([i * 255 / 65535 for i in bg_color])
             bg_image = Image.new('RGB', src.size, color=bg_color)
@@ -1660,9 +1643,12 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self._edited.bind('<Control-Return>', self.finish_edit_)
         self._edited.bind('<Escape>', self.hide_input_)
         self._edited.bind('<Leave>', self.finish_edit_)
-        self._edited.bind('<Mod1-a>', self.edit_select_all_)
+        if jex.is_macos():
+            self._edited.bind('<Command-a>', self.edit_select_all_)
+        else:
+            self._edited.bind('<Control-a>', self.edit_select_all_)
         #
-        self.bind('<2>', self.on_popup_menu_)
+        self.bind(jex.mouse_right_button(), self.on_popup_menu_)
         self._menu = TextTableBox.Popup(self)
 
     def draw_table(self, rows, cols):

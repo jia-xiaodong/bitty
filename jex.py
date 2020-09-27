@@ -7,8 +7,11 @@ are all placed here.
 """
 
 import functools
+import io
 import struct
-import io, sys
+import sys
+from sys import platform
+
 
 def isPython3():
     if sys.version > '3':
@@ -55,6 +58,27 @@ if not isPython3():
         reverse = dict((value, key) for key, value in enums.iteritems())
         enums['name'] = reverse
         return type('Enum', (), enums)
+
+
+if isPython3():
+    from enum import Enum
+    class PLATFORM(Enum):
+        Darwin = 0
+        Win = 1
+else:
+    PLATFORM = enum1(Darwin=0, Win=1)
+
+
+def is_macos():
+    return True if platform.startswith('darwin') else False
+
+
+def is_win():
+    return True if platform.startswith('win') else False
+
+
+def mouse_right_button():
+    return '<2>' if is_macos() else '<3>'
 
 
 class InvalidArgumentTypeError(ValueError):
