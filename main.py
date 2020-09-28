@@ -9,9 +9,7 @@ if jex.isPython3():
     import tkinter.messagebox as tkMessageBox
     import tkinter.filedialog as tkFileDialog
     import tkinter.font as tkFont
-
     from enum import Enum
-    from functools import cmp_to_key
 
 else:
     import Tkinter as tk
@@ -1006,10 +1004,7 @@ class TipManager(object):
                     continue
                 tip_tags.append((i, text.index(ranges[0]), text.index(ranges[1])))
         # the purpose of sort is only one: digest comparison
-        if jex.isPython3():
-            tip_tags.sort(key=cmp_to_key(lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1))
-        else:
-            tip_tags.sort(cmp=lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1)
+        jex.sort_by_cmp(tip_tags, lambda i, j: -1 if text.compare(i[1], '<', j[1]) else 1)
         for t, s, e in tip_tags:
             txt = self.get_content(text, t)
             formats.append(dict(start=s, end=e, text=txt))
@@ -1352,7 +1347,7 @@ class MainApp(tk.Tk):
         #
         im.close()
         self._font = tkFont.Font(family=MainApp.DEFAULT_FONT, size=MainApp.DEFAULT_SIZE)
-        editor = jtk.MultiTabEditor(self, font=self._font)
+        editor = jtk.MultiTabEditor(self, font=self._font.copy())
         editor.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         editor.bind(jtk.MultiTabEditor.EVENT_SWITCH, self.on_tab_switched_)
         self._editor = editor
@@ -1610,11 +1605,20 @@ At the age of 40.
     def font_changed_(self):
         family = self._font_family.get()
         size = int(self._font_size.get())
+        changed = False
         try:
-            if self._font.cget('family') != family:
-                self._font.config(family=family)
-            if self._font.cget('size') != size:
-                self._font.config(size=size)
+            editor = self._editor.active
+            core = editor.core()
+            font = tkFont.Font(font=core['font'])
+            if font.cget('family') != family:
+                font.config(family=family)
+                changed = True
+            if font.cget('size') != size:
+                font.config(size=size)
+                changed = True
+            if changed:
+                core.config(font=font)
+                editor.on_modified()
         except Exception as e:
             pass
 
@@ -1764,7 +1768,8 @@ At the age of 40.
                      [{"text": "control-enter"}, {"text": "to finish"}, {"text": "input"}]]
         finally:
             editor = self._editor.active
-            w = jtk.TextTableBox(editor.core(), table=table, font=self._font)
+            font = tkFont.Font(font=editor.core()['font'])
+            w = jtk.TextTableBox(editor.core(), table=table, font=font)
             editor.core().window_create(tk.INSERT, window=w)
             editor.on_modified()
 
@@ -1787,10 +1792,11 @@ At the age of 40.
 
     def config_core(self, editor):
         text = editor.core()
+        font = tkFont.Font(font=text['font'])
         text.tag_config('underline', underline=1)
         text.tag_config('list', lmargin1=12, lmargin2=12)  # 12 pixels, for list
         #
-        height = self._font.metrics("linespace")
+        height = font.metrics("linespace")
         text.tag_config('sup', offset=height/3)
         text.tag_config('sub', offset=-height/3)
 
@@ -1876,10 +1882,7 @@ At the age of 40.
         # database in future. With the help of a placeholder, it's easy to insert window to
         # tk.Text by original position.
         windows = [w for w in windows if isinstance(w, jtk.StorageMixin)]
-        if jex.isPython3():
-            windows.sort(key=cmp_to_key(lambda i, j: -1 if text.compare(i, '<', j) else 1))
-        else:
-            windows.sort(cmp=lambda i, j: -1 if text.compare(i, '<', j) else 1)
+        jex.sort_by_cmp(windows, lambda i, j: -1 if text.compare(i, '<', j) else 1)
         for w in windows:
             row, col = text.index(w).split('.')
             row, col = int(row) - 1, int(col)
@@ -1887,6 +1890,10 @@ At the age of 40.
         # 1. text
         content = [i.rstrip() for i in content]  # delete redundant trailing spaces
         textual["text"] = '\n'.join(content)
+        # 2. font
+        font = tkFont.Font(font=text['font'])
+        font_spec = {'family': font['family'], 'size': font['size']}
+        textual['font'] = font_spec
         # 2. images (their binary data is separated to variable 'binary')
         buf = io.BytesIO()
         jfp = jex.FilePile(buf, 'w')
@@ -1949,6 +1956,14 @@ At the age of 40.
             text = textual.pop("text", '')
             # 1. text
             core.insert('1.0', text)
+            # 2. font
+            font_spec = textual.pop("font", '')
+            font = None
+            if len(font_spec) > 0:
+                font = tkFont.Font(family=font_spec['family'], size=font_spec['size'])
+            if font is None:
+                font = self._font.copy()
+            core.config(font=font)
             # 2. images
             images = textual.pop('image', [])
             if len(images) > 0:
@@ -1963,7 +1978,7 @@ At the age of 40.
                 jfp.close()
             # 3. tables
             for i in textual.pop('table', []):
-                table = jtk.TextTableBox(core, table=i['specs'], font=self._font)
+                table = jtk.TextTableBox(core, table=i['specs'], font=font)
                 core.delete(i['pos'])  # delete placeholder
                 core.window_create(i['pos'], window=table)
             # 4. underlines

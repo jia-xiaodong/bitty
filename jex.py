@@ -81,6 +81,13 @@ def mouse_right_button():
     return '<2>' if is_macos() else '<3>'
 
 
+def sort_by_cmp(array, cmp, reverse=False):
+    if isPython3():
+        array.sort(key=functools.cmp_to_key(cmp), reverse=reverse)
+    else:
+        array.sort(cmp=cmp, reverse=reverse)
+
+
 class InvalidArgumentTypeError(ValueError):
     """
     Raised when the type of an argument to a function is not what it should be.
