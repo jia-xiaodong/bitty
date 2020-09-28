@@ -1719,7 +1719,7 @@ At the age of 40.
             it = iter(core.tag_ranges(tag))
             fully_included = False
             for s in it:
-                e = it.next()
+                e = next(it)
                 if core.compare(s, '<=', sel_range[0]) and core.compare(e, '>=', sel_range[1]):
                     fully_included = True
                     break
