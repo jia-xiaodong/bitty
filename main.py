@@ -1646,11 +1646,19 @@ At the age of 40.
         #map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DB_EXIST])
         #
         if evt.state:
-            self.bind('<Command-n>', self.menu_doc_new_)
-            self.bind('<Command-o>', self.menu_doc_open_)
+            if jex.is_macos():
+                self.bind('<Command-n>', self.menu_doc_new_)
+                self.bind('<Command-o>', self.menu_doc_open_)
+            elif jex.is_win():
+                self.bind('<Control-n>', self.menu_doc_new_)
+                self.bind('<Control-o>', self.menu_doc_open_)
         else:
-            self.unbind('<Command-n>')
-            self.unbind('<Command-o>')
+            if jex.is_macos():
+                self.unbind('<Command-n>')
+                self.unbind('<Command-o>')
+            elif jex.is_win():
+                self.unbind('<Control-n>')
+                self.unbind('<Control-o>')
 
     def notify_doc_ops_(self, evt):
         state = tk.NORMAL if evt.state else tk.DISABLED
