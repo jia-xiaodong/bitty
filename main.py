@@ -93,11 +93,11 @@ class TagPicker(tk.Frame):
         self._tree.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         self._tree.bind(jex.mouse_right_button(), self.on_popup_menu_)
         self._tree.bind('<Double-1>', self.select_tag_)
-        #map(lambda i: self.draw_tags_('', i), self._tags)
+        # map(lambda i: self.draw_tags_('', i), self._tags)
         for i in self._tags:
             self.draw_tags_('', i)
         self._moved_node = None  # tag can be moved to another tag as its child
-        self._been_shown = False # show this menu item only once
+        self._been_shown = False  # show this menu item only once
         #
         # user can select tag from tag-tree and put their text to below list-box.
         tk.Label(master, text='Selected:').pack(side=tk.TOP, anchor=tk.W)
@@ -105,7 +105,7 @@ class TagPicker(tk.Frame):
         self._list.pack(fill=tk.BOTH, expand=tk.YES)
         self._list.bind('<BackSpace>', self.deselect_tag_)
         self._list.bind('<Double-1>', self.deselect_tag_)
-        #map(lambda i: self._list.insert(tk.END, i.name), self._selected)
+        # map(lambda i: self._list.insert(tk.END, i.name), self._selected)
         for i in self._selected:
             self._list.insert(tk.END, i.name)
         #
@@ -122,13 +122,13 @@ class TagPicker(tk.Frame):
         clicked = self._tree.identify_row(evt.y)
         if focused != clicked:
             self._tree.selection_remove(focused)  # -- NOTE --
-            self._tree.selection_add(clicked)     # selection != focus
-            self._tree.focus(clicked)             # selection is visual; focus is logical.
+            self._tree.selection_add(clicked)  # selection != focus
+            self._tree.focus(clicked)  # selection is visual; focus is logical.
         TagPicker.Popup(self, clicked).post(*self.winfo_pointerxy())
 
     def on_query_(self, evt):
         # 1. restore
-        #map(lambda i: self._tree.move(i.iid, i.parent, i.index), self._filtered)
+        # map(lambda i: self._tree.move(i.iid, i.parent, i.index), self._filtered)
         for i in self._filtered:
             self._tree.move(i.iid, i.parent, i.index)
         del self._filtered[:]
@@ -181,7 +181,7 @@ class TagPicker(tk.Frame):
                 break
         self._selected.append(target)
         self._list.delete(0, tk.END)
-        #map(lambda i: self._list.insert(tk.END, i.name), self._selected)
+        # map(lambda i: self._list.insert(tk.END, i.name), self._selected)
         for i in self._selected:
             self._list.insert(tk.END, i.name)
 
@@ -289,7 +289,7 @@ class TagPicker(tk.Frame):
         if self._tree.parent(self._moved_node) == parent:
             return False  # not necessary to move, already been here.
         if parent == '':
-            return True   # node can be moved to root
+            return True  # node can be moved to root
         moved = self.tag_from_node_(self._moved_node)
         static = self._tree.item(parent, 'values')
         static = int(static[0])
@@ -405,6 +405,7 @@ class ByTitle(SearchCondition):
     """
     @return an array of keywords.
     """
+
     def __init__(self, master, *a, **kw):
         SearchCondition.__init__(self, master, *a, **kw)
         #
@@ -438,6 +439,7 @@ class ByTags(SearchCondition):
     @return an array of DBRecordTag objects.
         If nothing selected, return [] (aka. empty array)
     """
+
     def __init__(self, master, *a, **kw):
         self._store = kw.pop('database')
         SearchCondition.__init__(self, master, *a, **kw)
@@ -467,6 +469,7 @@ class ByDate(SearchCondition):
     """
     @return tuple(from, to), both 'from' and 'to' are date objects (or None, if not selected).
     """
+
     def __init__(self, master, *a, **kw):
         SearchCondition.__init__(self, master, *a, **kw)
         #
@@ -543,7 +546,7 @@ class ByOrder(SearchCondition):
         tk.Checkbutton(self, variable=self._switch).pack(side=tk.LEFT)
         cb = self.register(self.auto_toggle)
         self._from = tk.StringVar()
-        self._to   = tk.StringVar()
+        self._to = tk.StringVar()
         e = tk.Entry(self, textvariable=self._from, width=16, validate='key', validatecommand=cb)
         e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
         jtk.MakePlaceHolder(e, '<Record ID from ?>')
@@ -582,7 +585,7 @@ class NotePreview:
 
     def __init__(self, master, database, note):
         self._top = top = tk.Toplevel(master, bd=1)
-        top.transient(master)          # floating above master always
+        top.transient(master)  # floating above master always
         top.wm_overrideredirect(True)  # remove window title bar
         #
         tk.Label(top, text='Title: %s' % note.title).pack(side=tk.TOP, anchor=tk.W)
@@ -608,7 +611,7 @@ class NotePreview:
         top.grab_set()
         top.bind('<Motion>', self.check_close_)
         #
-        top.geometry("+%d+%d" % (master.winfo_rootx()+100, master.winfo_rooty()))
+        top.geometry("+%d+%d" % (master.winfo_rootx() + 100, master.winfo_rooty()))
         # detect user 'enter-zone' behavior
         self._been_entered = False
 
@@ -709,7 +712,7 @@ class OpenDocDlg(jtk.ModalDialog):
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         #
         self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date'],
-                                       show='headings',         # hide first icon column
+                                       show='headings',  # hide first icon column
                                        height=OpenDocDlg.PAGE_NUM,
                                        selectmode=tk.EXTENDED)  # multiple rows can be selected
         self._note_list.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
@@ -741,7 +744,7 @@ class OpenDocDlg(jtk.ModalDialog):
         tk.Button(box, text='|<<', command=lambda: self.jump_page_(0)).pack(side=tk.LEFT)
         tk.Button(box, text='<-', command=self.jump_prev_).pack(side=tk.LEFT)
         tk.Button(box, text='->', command=self.jump_next_).pack(side=tk.LEFT)
-        tk.Button(box, text='>>|', command=lambda: self.jump_page_(self.pages_()-1)).pack(side=tk.LEFT)
+        tk.Button(box, text='>>|', command=lambda: self.jump_page_(self.pages_() - 1)).pack(side=tk.LEFT)
         #
         self._progress = tk.StringVar(value='page number')
         tk.Label(box, textvariable=self._progress).pack(side=tk.LEFT)
@@ -765,19 +768,19 @@ class OpenDocDlg(jtk.ModalDialog):
             self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date])
         if len(self._state.hits) > 0:
             self._note_list.selection_set('0')  # automatically select the 1st one
-            self._note_list.focus('0')          # give the 1st one focus (visually)
-            self._note_list.focus_set()         # widget get focus to accept '<space>', '<Up>', '<Down>'
+            self._note_list.focus('0')  # give the 1st one focus (visually)
+            self._note_list.focus_set()  # widget get focus to accept '<space>', '<Up>', '<Down>'
         #
-        self._progress.set('%d / %d' % (n+1, self.pages_()))
+        self._progress.set('%d / %d' % (n + 1, self.pages_()))
         self._state.page = n
 
     def jump_next_(self, evt=None):
-        if self._state.page+1 < self.pages_():
-            self.jump_page_(self._state.page+1)
+        if self._state.page + 1 < self.pages_():
+            self.jump_page_(self._state.page + 1)
 
     def jump_prev_(self, evt=None):
         if self._state.page > 0:
-            self.jump_page_(self._state.page-1)
+            self.jump_page_(self._state.page - 1)
 
     def pages_(self):
         total = max(len(self._state.hits), 1)
@@ -797,15 +800,15 @@ class OpenDocDlg(jtk.ModalDialog):
                 conditions['tags'] = tags
         if self._sb_dat.enabled():
             from_, to_ = self._sb_dat.get_result()
-            if not from_ is None:
+            if from_ is not None:
                 conditions['from'] = from_
-            if not to_ is None:
+            if to_ is not None:
                 conditions['to'] = to_
         if self._sb_ord.enabled():
             lower, upper = self._sb_ord.get_result()
-            if not upper is None:
+            if upper is not None:
                 conditions['upper'] = upper
-            if not lower is None:
+            if lower is not None:
                 conditions['lower'] = lower
         if self._sb_txt.enabled():
             keywords = self._sb_txt.get_result()
@@ -821,7 +824,7 @@ class OpenDocDlg(jtk.ModalDialog):
     def open_preview_(self, evt=None):
         if evt.type == '2':  # TODO: 2 for key?
             active = self._note_list.focus()
-        else:                # TODO: 4 for mouse?
+        else:  # TODO: 4 for mouse?
             active = self._note_list.identify_row(evt.y)
         if active == '':
             return
@@ -898,7 +901,7 @@ class RelyItem:
     def set_state(self, state):
         if self._c > -1:  # menu item
             self._w.entryconfig(self._c, state=state)
-        else:             # button
+        else:  # button
             self._w.config(state=state)
 
 
@@ -967,10 +970,10 @@ class TipManager(object):
         x, y, _, _ = text.bbox(tk.CURRENT)
         w, h = label.winfo_reqwidth(), label.winfo_reqheight()
         padding = 20  # keep a minimal distance from screen border
-        ox = max(rx+x-w/2, padding)
-        oy = max(ry+y-h, padding)
-        ox = min(ox, text.winfo_screenwidth()-padding-w)
-        oy = min(oy, text.winfo_screenheight()-padding-h)
+        ox = max(rx + x - w / 2, padding)
+        oy = max(ry + y - h, padding)
+        ox = min(ox, text.winfo_screenwidth() - padding - w)
+        oy = min(oy, text.winfo_screenheight() - padding - h)
         self._wnd.wm_geometry("+%d+%d" % (ox, oy))
 
     def unschedule_(self, evt=None):
@@ -1111,10 +1114,10 @@ class DocCopyDlg(jtk.ModalDialog):
                 if i.find('-') > 0:
                     pos = i.find('-')
                     start = int(i[:pos])
-                    stop = int(i[pos+1:])
+                    stop = int(i[pos + 1:])
                     # add new range: [start, stop]
                     # +1 to include "stop"
-                    record_id = record_id.union(set(range(start, stop+1)))
+                    record_id = record_id.union(set(range(start, stop + 1)))
                 else:
                     record_id.add(int(i))
             except Exception as e:
@@ -1145,7 +1148,7 @@ class MainApp(tk.Tk):
     else:
         RELY = jex.enum1(DB=0, DOC=1)
 
-    EVENT_DB_EXIST = '<<DBExist>>'    # sent when database is opened / closed.
+    EVENT_DB_EXIST = '<<DBExist>>'  # sent when database is opened / closed.
     EVENT_DOC_EXIST = '<<DocExist>>'  # sent when first document opened / last document closed.
 
     def __init__(self, *a, **kw):
@@ -1190,7 +1193,7 @@ class MainApp(tk.Tk):
         menu.add_command(label='Copy to Other DB', command=self.doc_copy_elsewhere_)
         self.add_listener(menu, MainApp.EVENT_DB_EXIST, 6)
         menu_bar.add_cascade(label='Document', menu=menu)
-        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start+1)
+        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 1)
         # edit
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='Insert Image File', command=self.edit_insert_image_)
@@ -1212,7 +1215,7 @@ class MainApp(tk.Tk):
         menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 9)
         menu_bar.add_cascade(label='Edit', menu=menu)
-        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start+2)
+        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 2)
         # help
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='About', command=self.menu_help_about_)
@@ -1227,7 +1230,7 @@ class MainApp(tk.Tk):
         im = Image.open('toolbar.jpg')
         #
         n = 0
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_doc_new_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1235,7 +1238,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DB_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_doc_open_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1243,7 +1246,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DB_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_doc_save_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1251,7 +1254,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_doc_close_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1261,7 +1264,7 @@ class MainApp(tk.Tk):
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_insert_image_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1269,7 +1272,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_insert_table_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1277,7 +1280,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_underline_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1285,7 +1288,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_mark_list_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1293,7 +1296,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 3
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_a_tip_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1303,7 +1306,7 @@ class MainApp(tk.Tk):
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_edit_find_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1311,7 +1314,7 @@ class MainApp(tk.Tk):
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_doc_attr_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1321,7 +1324,7 @@ class MainApp(tk.Tk):
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
         #
         n += 1
-        ico = ImageTk.PhotoImage(im.crop((0, 32*n, 31, 32*(n+1)-1)))
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.menu_doc_delete_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
@@ -1408,8 +1411,8 @@ class MainApp(tk.Tk):
         return True
 
     def quit_(self):
-        if self._editor.active and\
-           not tkMessageBox.askokcancel(MainApp.TITLE, 'Are you sure to QUIT?'):
+        if self._editor.active and \
+                not tkMessageBox.askokcancel(MainApp.TITLE, 'Are you sure to QUIT?'):
             return
         if not self.menu_database_close_():
             return
@@ -1429,7 +1432,7 @@ class MainApp(tk.Tk):
         if dlg.result is None:
             return
         indices, self._last_search = dlg.result
-        opened = {n:e for e, n in self._notes.items()}
+        opened = {n: e for e, n in self._notes.items()}
         for i in indices:
             note = self._last_search.hits[i]
             # self._last_search.hits may contains the same doc to the ones in self._notes.
@@ -1581,7 +1584,7 @@ At the age of 40.
         if len(parts) > 2:  # unknown format
             return False
         if parts[0] == MainApp.UNNAMED:
-            if len(parts) == 1:     # option 1: 'untitled'
+            if len(parts) == 1:  # option 1: 'untitled'
                 return True
             if parts[2].isdigit():  # option 2: 'untitled-2'
                 return True
@@ -1643,7 +1646,7 @@ At the age of 40.
         state = tk.NORMAL if evt.state else tk.DISABLED
         for w in self._relied[MainApp.EVENT_DB_EXIST]:
             w.set_state(state)
-        #map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DB_EXIST])
+        # map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DB_EXIST])
         #
         if evt.state:
             if jex.is_macos():
@@ -1664,7 +1667,7 @@ At the age of 40.
         state = tk.NORMAL if evt.state else tk.DISABLED
         for w in self._relied[MainApp.EVENT_DOC_EXIST]:
             w.set_state(state)
-        #map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DOC_EXIST])
+        # map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DOC_EXIST])
         #
         if evt.state:
             self.bind('<Control-s>', self.menu_doc_save_)
@@ -1761,7 +1764,7 @@ At the age of 40.
                 start = 0
             #
             for i, each in enumerate(images):
-                core.insert(tk.INSERT, '\n%d\n' % (i+start+1))
+                core.insert(tk.INSERT, '\n%d\n' % (i + start + 1))
                 image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
                 core.window_create(tk.INSERT, window=image)
         editor.on_modified()
@@ -1805,8 +1808,8 @@ At the age of 40.
         text.tag_config('list', lmargin1=12, lmargin2=12)  # 12 pixels, for list
         #
         height = font.metrics("linespace")
-        text.tag_config('sup', offset=height/3)
-        text.tag_config('sub', offset=-height/3)
+        text.tag_config('sup', offset=height / 3)
+        text.tag_config('sub', offset=-height / 3)
 
     def copy_from_clipboard_(self):
         editor = self._editor.active
@@ -1855,14 +1858,14 @@ At the age of 40.
         content = self._tip_mgr.get_content(core, target_tip)
         dlg = TipEditDlg(self, sel=text, tip=content)
         dlg.show()
-        if dlg.result is None:    # user cancels
+        if dlg.result is None:  # user cancels
             return
         if len(dlg.result) == 0:  # delete tip
             if not tkMessageBox.askyesno(MainApp.TITLE, 'Are you sure to delete it?'):
                 return
             self._tip_mgr.remove(core, target_tip)
             editor.on_modified()
-        else:                     # update old tip
+        else:  # update old tip
             tip_different = (dlg.result != content)
             if tip_different:
                 self._tip_mgr.update(core, target_tip, dlg.result)
@@ -2028,6 +2031,7 @@ At the age of 40.
         if 'text' in root:
             text = '%s\n%s' % (text, root['text'])
         return all(text.find(i) > -1 for i in words)
+
 
 if __name__ == "__main__":
     MainApp().mainloop()
