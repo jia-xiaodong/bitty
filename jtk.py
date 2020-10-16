@@ -1417,7 +1417,7 @@ class ImageBox(tk.Canvas, StorageMixin):
         self.bind('<Leave>', self.hud_off_)
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
         # For GIF
-        self._gif_task = 0
+        self._gif_task = None
         self._gif_buff = None
         self._gif_curr = -1
         self._gif_dura = 0
@@ -1447,18 +1447,18 @@ class ImageBox(tk.Canvas, StorageMixin):
         return self._gif_curr > -1
 
     def resize_(self):
-        if self._gif_task > 0:  # GIF is playing
+        if self._gif_task is not None:  # GIF is playing
             self.after_cancel(self._gif_task)
-            self._gif_task = 0
+            self._gif_task = None
         self.after(100, self.display_)
         self.on_modified_()
 
     def toggle_(self, evt):
         if not self.is_gif():
             return
-        if self._gif_task > 0:
+        if self._gif_task is not None:
             self.after_cancel(self._gif_task)
-            self._gif_task = 0
+            self._gif_task = None
         else:
             self._gif_task = self.after(self._gif_dura, self.display_)
 
@@ -1485,10 +1485,10 @@ class ImageBox(tk.Canvas, StorageMixin):
         # display image and schedule next frame if loop is on
         if self.is_gif():
             src = self._gif_buff[self._gif_curr]
-            if self._gif_task > 0:
+            if self._gif_task is not None:
                 self._gif_curr = (self._gif_curr+1) % self._src.n_frames
                 if self._gif_curr == 0 and self._loop.get() == 0:
-                    self._gif_task = 0
+                    self._gif_task = None
                 else:
                     self._gif_task = self.after(self._gif_dura, self.display_)
         else:
