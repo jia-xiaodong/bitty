@@ -784,7 +784,7 @@ class OpenDocDlg(jtk.ModalDialog):
 
     def pages_(self):
         total = max(len(self._state.hits), 1)
-        return (total - 1) / OpenDocDlg.PAGE_NUM + 1
+        return (total - 1) // OpenDocDlg.PAGE_NUM + 1  # [Python 3x] floored divide: "//"
 
     def search_(self, evt=None):
         conditions = {}
@@ -1138,7 +1138,7 @@ class MainApp(tk.Tk):
         SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2)
 
     # All text editors are using same font
-    DEFAULT_FONT = 'Helvetica' if platform == 'darwin' else 'Courier'
+    DEFAULT_FONT = 'Helvetica' if platform == 'darwin' else '宋体'
     DEFAULT_SIZE = 18
     #
     if jex.isPython3():
@@ -1765,7 +1765,7 @@ At the age of 40.
             #
             for i, each in enumerate(images):
                 core.insert(tk.INSERT, '\n%d\n' % (i + start + 1))
-                image = jtk.ImageBox(core, image=open(each), ext=os.path.splitext(each)[1])
+                image = jtk.ImageBox(core, image=open(each, 'rb'), ext=os.path.splitext(each)[1])
                 core.window_create(tk.INSERT, window=image)
         editor.on_modified()
 
