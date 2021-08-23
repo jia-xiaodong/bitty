@@ -1823,7 +1823,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         return None
 
     def add_row_up(self):
-        row = self._selected.grid / self.grid_cols()
+        row = self.nth_row(self._selected.grid)
         first_cell = self._table[row][0]
         cells = []
         reached = False
@@ -1840,7 +1840,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self.draw_cell_array_(cells, self.grid_rows()+1, self.grid_cols())
 
     def add_row_down(self):
-        row = self._selected.grid / self.grid_cols()
+        row = self.nth_row(self._selected.grid)
         last_cell = self._table[row][-1]
         cells = []
         reached = False
@@ -1887,7 +1887,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self.draw_cell_array_(cells, self.grid_rows(), self.grid_cols()+1)
 
     def del_row(self):
-        row = self._selected.grid / self.grid_cols()
+        row = self.nth_row(self._selected.grid)
         affected = []
         start = row * self.grid_cols()
         for i in range(start, start + self.grid_cols()):
@@ -1934,7 +1934,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         above.rows += self._selected.rows
         above.text = '%s\n%s' % (above.text, self._selected.text)
         # check redundant rows
-        row_start = above.grid / self.grid_cols()
+        row_start = self.nth_row(above.grid)
         row_end = row_start + above.rows
         for i in range(row_start, row_end):
             row_cells = set([above])
@@ -1942,7 +1942,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
                 cell = self.grid_to_cell(i * self.grid_cols() + j)
                 if cell in row_cells:
                     continue
-                bottom_bound = cell.grid / self.grid_cols() + cell.rows
+                bottom_bound = self.nth_row(cell.grid) + cell.rows
                 if bottom_bound == i+1:
                     row_cells.clear()
                     break
@@ -1975,7 +1975,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self._selected.rows += below.rows
         self._selected.text = '%s\n%s' % (self._selected.text, below.text)
         # check redundant rows
-        row_start = self._selected.grid / self.grid_cols()
+        row_start = self.nth_row(self._selected.grid)
         row_end = row_start + self._selected.rows
         for i in range(row_start, row_end):
             row_cells = set([self._selected])
@@ -1983,7 +1983,7 @@ class TextTableBox(tk.Canvas, StorageMixin):
                 cell = self.grid_to_cell(i * self.grid_cols() + j)
                 if cell in row_cells:
                     continue
-                bottom_bound = cell.grid / self.grid_cols() + cell.rows
+                bottom_bound = self.nth_row(cell.grid) + cell.rows
                 if bottom_bound == i+1:
                     row_cells.clear()
                     break
@@ -2151,6 +2151,9 @@ class TextTableBox(tk.Canvas, StorageMixin):
         self._selected = None
         self.draw_table(row_num, col_num)
         self.on_modified_()
+
+    def nth_row(self, cell_idx):
+        return int(cell_idx / self.grid_cols())
 
 
 def unit_test_calendar():
