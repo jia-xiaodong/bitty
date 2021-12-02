@@ -4,6 +4,8 @@
 """
 An enhancement to Tkinter.
 """
+import base64
+
 import jex
 
 if jex.isPython3():
@@ -1416,6 +1418,7 @@ class ImageBox(tk.Canvas, StorageMixin):
         self.bind('<Enter>', self.hud_on_)
         self.bind('<Leave>', self.hud_off_)
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
+        self.bind('<Double-Button-1>', self.serialize_to_clipboard)
         # For GIF
         self._gif_task = None
         self._gif_buff = None
@@ -1551,6 +1554,14 @@ class ImageBox(tk.Canvas, StorageMixin):
         if self.winfo_width() < min_width+CANVAS_BIAS*2:
             min_height = int(self._src.height * min_width / self._src.width)
             self.config(width=min_width, height=min_height)
+
+    def serialize_to_clipboard(self, evt=None):
+        self._bak.seek(0)
+        content = self._bak.read()
+        text = base64.urlsafe_b64encode(content).decode('utf8')
+        serialized = json.dumps({'jxd_bitty': {'format': 'image', 'data': text, 'ext': self._ext}})
+        self.clipboard_clear()
+        self.clipboard_append(serialized)
 
 
 class TextTableBox(tk.Canvas, StorageMixin):

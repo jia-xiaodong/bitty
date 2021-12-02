@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import base64
 import sys
 import jex
 
@@ -1747,26 +1748,41 @@ At the age of 40.
             print('Error: %s' % e)
 
     def edit_insert_image_(self):
-        extensions = tuple(Image.registered_extensions().keys())
-        images = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)], multiple=True)
-        if len(images) == 0:
-            return
-        editor = self._editor.active
-        core = editor.core()
-        if len(images) == 1:
-            image = jtk.ImageBox(core, image=open(images[0], 'rb'), ext=os.path.splitext(images[0])[1])
+        try:
+            s = self.clipboard_get()
+            root = json.loads(s)
+            bitty_obj = root.pop("jxd_bitty")
+            if bitty_obj['format'] != 'image':
+                raise
+            image_bytes = bitty_obj['data']
+            image_bytes = image_bytes.encode('utf8')
+            image_bytes = base64.urlsafe_b64decode(image_bytes)
+            image_ext = bitty_obj['ext']
+            editor = self._editor.active
+            core = editor.core()
+            image = jtk.ImageBox(core, image=io.BytesIO(image_bytes), ext=image_ext)
             core.window_create(tk.INSERT, window=image)
-        else:
-            # a hidden trick: copy start-number from clipboard
-            try:
-                start = int(self.clipboard_get())
-            except:
-                start = 0
-            #
-            for i, each in enumerate(images):
-                core.insert(tk.INSERT, '\n%d\n' % (i + start + 1))
-                image = jtk.ImageBox(core, image=open(each, 'rb'), ext=os.path.splitext(each)[1])
+        except Exception as e:
+            extensions = tuple(Image.registered_extensions().keys())
+            images = tkFileDialog.askopenfilename(filetypes=[('Image File', extensions)], multiple=True)
+            if len(images) == 0:
+                return
+            editor = self._editor.active
+            core = editor.core()
+            if len(images) == 1:
+                image = jtk.ImageBox(core, image=open(images[0], 'rb'), ext=os.path.splitext(images[0])[1])
                 core.window_create(tk.INSERT, window=image)
+            else:
+                # a hidden trick: copy start-number from clipboard
+                try:
+                    start = int(self.clipboard_get())
+                except:
+                    start = 0
+                #
+                for i, each in enumerate(images):
+                    core.insert(tk.INSERT, '\n%d\n' % (i + start + 1))
+                    image = jtk.ImageBox(core, image=open(each, 'rb'), ext=os.path.splitext(each)[1])
+                    core.window_create(tk.INSERT, window=image)
         editor.on_modified()
 
     def edit_insert_table_(self):
