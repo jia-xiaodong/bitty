@@ -1810,6 +1810,18 @@ At the age of 40.
         height = font.metrics("linespace")
         text.tag_config('sup', offset=height / 3)
         text.tag_config('sub', offset=-height / 3)
+        #
+        font_different = False
+        setting_font_family = self._font_family.get()
+        setting_font_size = self._font_size.get()
+        if font.cget('family') != setting_font_family:
+            font.config(family=setting_font_family)
+            font_different = True
+        if font.cget('size') != setting_font_size:
+            font.config(size=setting_font_size)
+            font_different = True
+        if font_different:
+            text.config(font=font)
 
     def copy_from_clipboard_(self):
         editor = self._editor.active
