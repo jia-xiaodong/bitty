@@ -420,7 +420,7 @@ class ByTitle(SearchCondition):
         keywords = self._result.get().strip(' \n')
         if keywords == ByTitle.PLACE_HOLDER:
             return ''
-        return keywords.split(' ')
+        return keywords.lower().split(' ')
 
     def auto_toggle(self, text):
         """
@@ -2042,7 +2042,7 @@ At the age of 40.
         text = '\n'.join(text)
         if 'text' in root:
             text = '%s\n%s' % (text, root['text'])
-        return all(text.find(i) > -1 for i in words)
+        return all(i in text.lower() for i in words)  # case-insensitive compare
 
 
 if __name__ == "__main__":
