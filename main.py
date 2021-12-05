@@ -1353,7 +1353,7 @@ class MainApp(tk.Tk):
         self._font = tkFont.Font(family=MainApp.DEFAULT_FONT, size=MainApp.DEFAULT_SIZE)
         editor = jtk.MultiTabEditor(self, font=self._font.copy())
         editor.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
-        editor.bind(jtk.MultiTabEditor.EVENT_SWITCH, self.on_tab_switched_)
+        editor.bind(jtk.TabBarFrame.EVENT_TAB_SWITCH, self.on_tab_switched_)
         self._editor = editor
 
     def init_status_bar_(self):
@@ -1423,7 +1423,7 @@ class MainApp(tk.Tk):
         editor = self._editor.new_editor(MainApp.UNNAMED)
         self.config_core(editor)
         editor.monitor_change()
-        self._editor.switch_tab(editor)
+        self._editor.set_active(editor)
         if self._editor.count() == 1:
             self.event_generate(MainApp.EVENT_DOC_EXIST, state=1)
 
@@ -1445,12 +1445,12 @@ class MainApp(tk.Tk):
                     break
             # activate the editor opened previously
             if note in opened:
-                self._editor.switch_tab(opened[note])
+                self._editor.set_active(opened[note])
                 continue
             # if not opened yet
             editor = self._editor.new_editor(note.title)
             self.config_core(editor)
-            self._editor.switch_tab(editor)
+            self._editor.set_active(editor)
             self.load_content_(editor, note)
             editor.monitor_change()
             self._notes[editor] = note

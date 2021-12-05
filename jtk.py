@@ -773,6 +773,9 @@ class TabBarFrame(tk.Frame):
     PADDING = 8        # left/right padding for "X" (close button)s
     text_font = None
 
+    EVENT_TAB_PLACEMENT = '<<TabBarPlacement>>'
+    EVENT_TAB_SWITCH = '<<TabBarSwitch>>'
+
     def __init__(self, master=None, *a, **kw):
         self.has_exit = kw.pop('close', False)
         self.TAB_W = kw.pop('width', 120)
@@ -791,6 +794,7 @@ class TabBarFrame(tk.Frame):
 
     def on_widget_placed(self, evt):
         self.switch_tab(self.active)
+        self.event_generate(TabBarFrame.EVENT_TAB_PLACEMENT, when='tail')
 
     def on_resize(self, evt):
         if self.active is None:
@@ -834,6 +838,7 @@ class TabBarFrame(tk.Frame):
         if frame == self.active:
             self.active = None
             self.switch_tab()
+            self.event_generate(TabBarFrame.EVENT_TAB_SWITCH, when='tail')
 
     def tab_by_frame(self, frame):
         """
@@ -872,7 +877,9 @@ class TabBarFrame(tk.Frame):
         for t in self.tabs:
             shapes = [t.caption_id, t.shape_id]
             if any(i in shapes for i in clicked):
-                return self.switch_tab(t.frame)
+                self.switch_tab(t.frame)
+                self.event_generate(TabBarFrame.EVENT_TAB_SWITCH, when='tail')
+                return
 
     def draw_tab(self, index, is_active):
         # draw shape
@@ -980,8 +987,6 @@ class TabBarFrame(tk.Frame):
 
 
 class MultiTabEditor(TabBarFrame):
-    EVENT_SWITCH = '<<SwitchTab>>'
-
     def __init__(self, master, *a, **kw):
         self._font = kw.pop('font', None)
         TabBarFrame.__init__(self, master, *a, **kw)
@@ -996,10 +1001,6 @@ class MultiTabEditor(TabBarFrame):
         #
         editor.bind(TextEditor.EVENT_CLEAN, self.event_caption_)
         editor.bind(TextEditor.EVENT_DIRTY, self.event_caption_)
-
-    def switch_tab(self, editor=None):
-        TabBarFrame.switch_tab(self, editor)
-        self.event_generate(MultiTabEditor.EVENT_SWITCH, when='tail')
 
     def exists(self, caption):
         return any(t.caption == caption for t in self.tabs)
@@ -1062,6 +1063,10 @@ class MultiTabEditor(TabBarFrame):
         #map(lambda i: self.remove(i), frames)
         for i in frames:
             self.remove(i)
+
+    def set_active(self, tab):
+        self.switch_tab(tab)
+        self.event_generate(TabBarFrame.EVENT_TAB_SWITCH, when='tail')
 
 
 class ModalDialog(tk.Toplevel):
