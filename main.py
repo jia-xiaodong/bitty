@@ -1606,6 +1606,18 @@ At the age of 40.
             self._search.detach()
             self._search.attach(self._editor.active.core())
 
+        # current font settings updated to panel
+        if self._editor.active is not None:
+            editor = self._editor.active
+            core = editor.core()
+            font = tkFont.Font(font=core['font'])
+            family = self._font_family.get()
+            size = int(self._font_size.get())
+            if font.cget('family') != family:
+                self._font_family.set(font.cget('family'))
+            if font.cget('size') != size:
+                self._font_size.set(font.cget('size'))
+
     def font_changed_(self):
         family = self._font_family.get()
         size = int(self._font_size.get())
