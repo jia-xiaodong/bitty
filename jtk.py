@@ -24,6 +24,8 @@ import calendar
 import datetime
 import math
 
+from typing import Type
+
 from PIL import Image, ImageSequence, ImageTk
 from sys import platform
 
@@ -1401,6 +1403,20 @@ class StorageMixin:
 
 
 class ImageBox(tk.Canvas, StorageMixin):
+    class Popup(tk.Menu):
+        def __init__(self, master):
+            tk.Menu.__init__(self, master, tearoff=0)
+            #
+            self.add_command(label='Serialize to Clipboard', command=lambda: self.serialize_to_clipboard(master))
+            self.add_command(label='Export to File', command=master.export_to_file)
+
+        def serialize_to_clipboard(self, image_box):
+            content, _, ext = image_box.output()
+            text = base64.urlsafe_b64encode(content).decode('utf8')
+            serialized = json.dumps({'jxd_bitty': {'format': 'image', 'data': text, 'ext': ext}})
+            self.clipboard_clear()
+            self.clipboard_append(serialized)
+
     def __init__(self, master, *a, **kw):
         """
         keyword arguments:
@@ -1423,7 +1439,6 @@ class ImageBox(tk.Canvas, StorageMixin):
         self.bind('<Enter>', self.hud_on_)
         self.bind('<Leave>', self.hud_off_)
         self.bind('<MouseWheel>', self.on_scroll_)  # tk.Text need it to scroll across canvas.
-        self.bind('<Double-Button-1>', self.serialize_to_clipboard)
         # For GIF
         self._gif_task = None
         self._gif_buff = None
@@ -1443,11 +1458,11 @@ class ImageBox(tk.Canvas, StorageMixin):
         if self.is_gif():
             self._loop = tk.IntVar(value=self._src.info.get('loop', 0))
             tk.Checkbutton(row1, text='loop', variable=self._loop).pack(side=tk.LEFT)
-        row2 = tk.Frame(self._hudw)
-        row2.pack(side=tk.TOP)
-        tk.Scale(row2, orient=tk.HORIZONTAL, variable=self._scale, from_=1).pack(side=tk.LEFT)
-        tk.Button(row2, text='Export', command=self.export_to_file).pack(side=tk.LEFT, anchor=tk.S)
+        tk.Scale(self._hudw, orient=tk.HORIZONTAL, variable=self._scale, from_=1).pack(side=tk.TOP)
         self._hud = self.create_window(CANVAS_BIAS, CANVAS_BIAS, anchor=tk.NW, window=self._hudw, state=tk.HIDDEN)
+        #
+        self._popup_menu = ImageBox.Popup(self)
+        self.bind(jex.mouse_right_button(), self.on_popup_menu_)
         #
         self.display_()
 
@@ -1520,6 +1535,8 @@ class ImageBox(tk.Canvas, StorageMixin):
         self._scb = self._scale.trace('w', lambda n, i, m: self.resize_())
 
     def hud_off_(self, evt):
+        if self._scb is None:
+            return
         self.itemconfig(self._hud, state=tk.HIDDEN)
         self._scale.trace_vdelete('w', self._scb)
         self._scb = None
@@ -1560,13 +1577,8 @@ class ImageBox(tk.Canvas, StorageMixin):
             min_height = int(self._src.height * min_width / self._src.width)
             self.config(width=min_width, height=min_height)
 
-    def serialize_to_clipboard(self, evt=None):
-        self._bak.seek(0)
-        content = self._bak.read()
-        text = base64.urlsafe_b64encode(content).decode('utf8')
-        serialized = json.dumps({'jxd_bitty': {'format': 'image', 'data': text, 'ext': self._ext}})
-        self.clipboard_clear()
-        self.clipboard_append(serialized)
+    def on_popup_menu_(self, evt):
+        self._popup_menu.post(*self.winfo_pointerxy())
 
 
 class TextTableBox(tk.Canvas, StorageMixin):
