@@ -3,6 +3,7 @@
 import base64
 import sys
 import jex
+import math
 
 if jex.isPython3():
     import tkinter as tk
@@ -968,12 +969,14 @@ class TipManager(object):
         label.pack(ipadx=5)
         # calculate coordinates
         rx, ry = text.winfo_rootx(), text.winfo_rooty()
-        x, y, _, _ = text.bbox(tk.CURRENT)
+        x, y, _, _ = text.bbox(tk.CURRENT)  # mouse cursor
         w, h = label.winfo_reqwidth(), label.winfo_reqheight()
         padding = 20  # keep a minimal distance from screen border
         ox = max(rx + x - w / 2, padding)
         oy = max(ry + y - h, padding)
-        ox = min(ox, text.winfo_screenwidth() - padding - w)
+        nth_screen = math.ceil((rx + x) / text.winfo_screenwidth())  # multi-screen support
+        rightmost = nth_screen * text.winfo_screenwidth()
+        ox = min(ox, rightmost - padding - w)
         oy = min(oy, text.winfo_screenheight() - padding - h)
         self._wnd.wm_geometry("+%d+%d" % (ox, oy))
 
