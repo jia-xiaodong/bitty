@@ -1200,6 +1200,7 @@ class SearchBar(tk.Frame):
         e = tk.Entry(frm, textvariable=self._pattern)
         e.pack(side=tk.LEFT)
         e.bind('<Return>', self.force_search_)
+        e.bind('<Map>', lambda evt: e.focus())
         btn = tk.Button(frm, text=u'\u2191', command=self.search_backwards_)
         btn.pack(side=tk.LEFT)
         self._btn_back = btn
@@ -1283,6 +1284,7 @@ class SearchBar(tk.Frame):
     def detach(self):
         self._txt.tag_delete(SearchBar.HIT)
         self._txt.tag_delete(SearchBar.CUR)
+        self._txt.focus()
         self._txt = None
         self._last = None
 
