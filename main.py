@@ -1645,6 +1645,11 @@ At the age of 40.
         self._relied = {}
         self.bind(MainApp.EVENT_DB_EXIST, self.notify_db_ops_)
         self.bind(MainApp.EVENT_DOC_EXIST, self.notify_doc_ops_)
+        #
+        if jex.is_macos():
+            self.bind('<Command-O>', lambda e: self.menu_database_open_())
+        elif jex.is_win():
+            self.bind('<Control-O>', lambda e: self.menu_database_open_())
 
     def add_listener(self, wgt, evt, sid=-1):
         """

@@ -1200,7 +1200,7 @@ class SearchBar(tk.Frame):
         e = tk.Entry(frm, textvariable=self._pattern)
         e.pack(side=tk.LEFT)
         e.bind('<Return>', self.force_search_)
-        e.bind('<Map>', lambda evt: e.focus())
+        e.bind('<Map>', lambda evt: self.get_focus(e))
         btn = tk.Button(frm, text=u'\u2191', command=self.search_backwards_)
         btn.pack(side=tk.LEFT)
         self._btn_back = btn
@@ -1394,6 +1394,9 @@ class SearchBar(tk.Frame):
             self._txt.tag_remove(SearchBar.CUR, *self._last)
             self._txt.tag_add(SearchBar.HIT, *self._last)
             self._last = None
+
+    def get_focus(self, entry):
+        entry.focus()
 
 
 class StorageMixin:
