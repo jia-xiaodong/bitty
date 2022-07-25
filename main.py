@@ -585,9 +585,11 @@ class NotePreview:
     LINE_WIDTH = 40
 
     def __init__(self, master, database, note):
-        self._top = top = tk.Toplevel(master, bd=1)
+        self._top = top = tk.Toplevel(master, bd=1, relief=tk.RIDGE)
         top.transient(master)  # floating above master always
-        #top.overrideredirect(True)  # remove window title bar
+        #
+        top.update_idletasks()      # according to doc, idle tasks must be done before below function call
+        top.overrideredirect(True)  # remove window title bar
         #
         tk.Label(top, text='Title: %s' % note.title).pack(side=tk.TOP, anchor=tk.W)
         #
@@ -605,14 +607,11 @@ class NotePreview:
         editor.insert(tk.END, '\n'.join(lines))
         editor.config(state=tk.DISABLED)  # disable editing after loading
         editor.pack(side=tk.TOP, pady=5)
-        #
-        # Strange function. It will affect <Motion> event behavior.
-        # Here it grabs the mouse <motion> event without user's explicit click on window.
-        # Of course, I mean it on Mac platform for now. TODO: what about windows?
+        # we need mouse events, of which <motion> is our interest
+        # but we need keyboard focus to be on the Main Dialog
         top.grab_set()
-        # we need focus to be on the Main Dialog
-        #top.focus_set()
         top.bind('<Motion>', self.check_close_)
+        #top.focus_set()
         #
         top.geometry("+%d+%d" % (master.winfo_rootx() + 100, master.winfo_rooty()))
         # detect user 'enter-zone' behavior
@@ -721,6 +720,7 @@ class OpenDocDlg(jtk.ModalDialog):
                                        selectmode=tk.EXTENDED)  # multiple rows can be selected
         self._note_list.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
         self._note_list.bind('<Double-1>', self.ok)
+        self._note_list.bind('<Shift_R>', self.ok)
         self._note_list.bind('<space>', self.open_preview_)
         self._note_list.bind(jex.mouse_right_button(), self.open_preview_)
         # <Up> and <Down> is the default key bindings for Treeview
@@ -1532,7 +1532,7 @@ class MainApp(tk.Tk):
         errors.add(MainApp.SAVE.Finish)
         return errors
 
-    def menu_doc_close_(self):
+    def menu_doc_close_(self, evt=None):
         editor = self._editor.active
         if editor.modified():
             choice = tkMessageBox.askyesnocancel(MainApp.TITLE, 'Wanna SAVE changes before closing doc?')
@@ -1697,20 +1697,16 @@ At the age of 40.
             w.set_state(state)
         # map(lambda w: w.set_state(state), self._relied[MainApp.EVENT_DB_EXIST])
         #
+        optional = 'Command' if jex.is_macos() else 'Control'
+        hotkeys = {'n': self.menu_doc_new_,
+                   'o': self.menu_doc_open_,
+                   'w': self.menu_doc_close_}
         if evt.state:
-            if jex.is_macos():
-                self.bind('<Command-n>', self.menu_doc_new_)
-                self.bind('<Command-o>', self.menu_doc_open_)
-            elif jex.is_win():
-                self.bind('<Control-n>', self.menu_doc_new_)
-                self.bind('<Control-o>', self.menu_doc_open_)
+            for k, f in hotkeys.items():
+                self.bind(f'<{optional}-{k}>', f)
         else:
-            if jex.is_macos():
-                self.unbind('<Command-n>')
-                self.unbind('<Command-o>')
-            elif jex.is_win():
-                self.unbind('<Control-n>')
-                self.unbind('<Control-o>')
+            for k in hotkeys.keys():
+                self.unbind(k)
 
     def notify_doc_ops_(self, evt):
         state = tk.NORMAL if evt.state else tk.DISABLED
