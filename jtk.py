@@ -777,6 +777,7 @@ class TabBarFrame(tk.Frame):
 
     EVENT_TAB_PLACEMENT = '<<TabBarPlacement>>'
     EVENT_TAB_SWITCH = '<<TabBarSwitch>>'
+    EVENT_TAB_CLOSED = '<<TabClose>>'
 
     def __init__(self, master=None, *a, **kw):
         self.has_exit = kw.pop('close', False)
@@ -835,6 +836,7 @@ class TabBarFrame(tk.Frame):
         #
         self.bar.delete(tab.caption_id, tab.shape_id, tab.close_btn)
         self.tabs.remove(tab)
+        self.event_generate(TabBarFrame.EVENT_TAB_CLOSED, when='tail')
         frame.pack_forget()
         #
         if frame == self.active:
@@ -1116,8 +1118,10 @@ class ModalDialog(tk.Toplevel):
     def show(self):
         """
         enter a local event loop until dialog is destroyed.
+        @return False if user cancels the dialog
         """
         self.wait_window(self)
+        return self.result is not None
 
     #
     # construction hooks
@@ -1584,6 +1588,9 @@ class ImageBox(tk.Canvas, StorageMixin):
 
     def on_popup_menu_(self, evt):
         self._popup_menu.post(*self.winfo_pointerxy())
+
+    def release_file(self):
+        self._bak.close()
 
 
 class TextTableBox(tk.Canvas, StorageMixin):

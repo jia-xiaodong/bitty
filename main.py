@@ -459,8 +459,7 @@ class ByTags(SearchCondition):
 
     def open_tag_picker_(self):
         dlg = TagPickDlg(self, database=self._store, owned=self._result)
-        dlg.show()
-        if dlg.result is None:
+        if dlg.show() is False:
             return
         self._result[:] = dlg.result
         self._tags_string.set(','.join(i.name for i in self._result))
@@ -588,7 +587,7 @@ class NotePreview:
     def __init__(self, master, database, note):
         self._top = top = tk.Toplevel(master, bd=1)
         top.transient(master)  # floating above master always
-        top.wm_overrideredirect(True)  # remove window title bar
+        #top.overrideredirect(True)  # remove window title bar
         #
         tk.Label(top, text='Title: %s' % note.title).pack(side=tk.TOP, anchor=tk.W)
         #
@@ -611,6 +610,8 @@ class NotePreview:
         # Here it grabs the mouse <motion> event without user's explicit click on window.
         # Of course, I mean it on Mac platform for now. TODO: what about windows?
         top.grab_set()
+        # we need focus to be on the Main Dialog
+        #top.focus_set()
         top.bind('<Motion>', self.check_close_)
         #
         top.geometry("+%d+%d" % (master.winfo_rootx() + 100, master.winfo_rooty()))
@@ -709,6 +710,7 @@ class OpenDocDlg(jtk.ModalDialog):
         # 5. search by content (Because its UI is same with ByTitle, so use ByTitle directly)
         self._sb_txt = ByTitle(box)
         box.add(self._sb_txt, 'Content')
+        self._box = box
         # --- results ---
         frm = tk.LabelFrame(master, text='Result:')
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
@@ -720,10 +722,13 @@ class OpenDocDlg(jtk.ModalDialog):
         self._note_list.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
         self._note_list.bind('<Double-1>', self.ok)
         self._note_list.bind('<space>', self.open_preview_)
-        self._note_list.bind('<2>', self.open_preview_)
+        self._note_list.bind(jex.mouse_right_button(), self.open_preview_)
         # <Up> and <Down> is the default key bindings for Treeview
         self._note_list.bind('<Left>', self.jump_prev_)
         self._note_list.bind('<Right>', self.jump_next_)
+        #
+        self.bind('<Next>', self.loop_tab_next_)
+        self.bind('<Prior>', self.loop_tab_prev_)
         #
         self._note_list.column('ID', width=20, minwidth=20)
         self._note_list.heading('ID', text='ID', command=self.sort_by_id_)
@@ -824,9 +829,9 @@ class OpenDocDlg(jtk.ModalDialog):
         self.jump_page_(0)
 
     def open_preview_(self, evt=None):
-        if evt.type == '2':  # TODO: 2 for key?
+        if evt.type == tk.EventType.KeyPress:
             active = self._note_list.focus()
-        else:  # TODO: 4 for mouse?
+        else:  # tk.EventType.ButtonPress:
             active = self._note_list.identify_row(evt.y)
         if active == '':
             return
@@ -845,6 +850,29 @@ class OpenDocDlg(jtk.ModalDialog):
         self._state.sort_switch(OpenDocDlg.SORT_BY_DATE)
         self._state.hits.sort(key=lambda i: i.date, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE))
         self.jump_page_(0)
+
+    def loop_tab_next_(self, evt=None):
+        tabs = [self._sb_tit, self._sb_tag, self._sb_dat, self._sb_ord, self._sb_txt]
+        for i, tab in enumerate(tabs):
+            if self._box.active == tab:
+                next_tab = (i+1) % len(tabs)
+                self._box.switch_tab(tabs[next_tab])
+                break
+
+    def loop_tab_prev_(self, evt=None):
+        tabs = [self._sb_txt, self._sb_ord, self._sb_dat, self._sb_tag, self._sb_tit]
+        for i, tab in enumerate(tabs):
+            if self._box.active == tab:
+                next_tab = (i+1) % len(tabs)
+                self._box.switch_tab(tabs[next_tab])
+                break
+
+    def cancel(self, event=None):
+        if self._preview is not None:
+            self._preview.close()
+            self._preview = None
+            return
+        super().cancel(event)
 
 
 class EntryOps:
@@ -1425,6 +1453,7 @@ class MainApp(tk.Tk):
     def menu_doc_new_(self, evt=None):
         editor = self._editor.new_editor(MainApp.UNNAMED)
         self.config_core(editor)
+        self._editor.bind(jtk.TabBarFrame.EVENT_TAB_CLOSED, lambda e: self.on_tab_closed(editor))
         editor.monitor_change()
         self._editor.set_active(editor)
         if self._editor.count() == 1:
@@ -1432,8 +1461,7 @@ class MainApp(tk.Tk):
 
     def menu_doc_open_(self, evt=None):
         dlg = OpenDocDlg(self, database=self._store, state=self._last_search)
-        dlg.show()
-        if dlg.result is None:
+        if dlg.show() is False:
             return
         indices, self._last_search = dlg.result
         opened = {n: e for e, n in self._notes.items()}
@@ -1453,6 +1481,7 @@ class MainApp(tk.Tk):
             # if not opened yet
             editor = self._editor.new_editor(note.title)
             self.config_core(editor)
+            self._editor.bind(jtk.TabBarFrame.EVENT_TAB_CLOSED, lambda e: self.on_tab_closed(editor))
             self._editor.set_active(editor)
             self.load_content_(editor, note)
             editor.monitor_change()
@@ -1574,8 +1603,7 @@ At the age of 40.
             record = jdb.DBRecordDoc(title)
         #
         dlg = DocPropertyDlg(self, database=self._store, record=record)
-        dlg.show()
-        if dlg.result is None:
+        if dlg.show() is False:
             return
         self._editor.set_caption(editor, record.title)
         editor.on_modified()  # add a flag besides title as an alert
@@ -1826,8 +1854,7 @@ At the age of 40.
 
     def doc_copy_elsewhere_(self):
         dlg = DocCopyDlg(self)
-        dlg.show()
-        if dlg.result is None:
+        if dlg.show() is False:
             return
         database, records = dlg.result
         if not jdb.DocBase.validate(database):
@@ -1894,8 +1921,7 @@ At the age of 40.
                 return
             if tips_nb == 0:  # new tip
                 dlg = TipEditDlg(self, sel=core.get(*sel_range))
-                dlg.show()
-                if dlg.result is not None and len(dlg.result) > 0:
+                if dlg.show() and len(dlg.result) > 0:
                     self._tip_mgr.insert(core, dlg.result, *sel_range)
                     editor.on_modified()
                 return
@@ -1905,8 +1931,7 @@ At the age of 40.
         text = core.get(*sel_range)
         content = self._tip_mgr.get_content(core, target_tip)
         dlg = TipEditDlg(self, sel=text, tip=content)
-        dlg.show()
-        if dlg.result is None:  # user cancels
+        if dlg.show() is False:  # user cancels
             return
         if len(dlg.result) == 0:  # delete tip
             if not tkMessageBox.askyesno(MainApp.TITLE, 'Are you sure to delete it?'):
@@ -1933,9 +1958,7 @@ At the age of 40.
         #
         textual = {}
         #
-        windows = text.window_names()
-        if len(windows) > 0 and jex.is_str(windows[0]):
-            windows = map(text.nametowidget, windows)  # name is converted to widget object
+        windows = self.all_custom_windows(text)
         #
         # Use "?" as placeholder which will be replaced by genuine widget when loading from
         # database in future. With the help of a placeholder, it's easy to insert window to
@@ -2079,6 +2102,20 @@ At the age of 40.
         if 'text' in root:
             text = '%s\n%s' % (text, root['text'])
         return all(i in text.lower() for i in words)  # case-insensitive compare
+
+    def on_tab_closed(self, editor: jtk.TextEditor):
+        windows = self.all_custom_windows(editor.core(), jtk.ImageBox)
+        for w in windows:
+            w.release_file()
+
+    @staticmethod
+    def all_custom_windows(text: tk.Text, cls=None):
+        windows = text.window_names()
+        if len(windows) > 0 and jex.is_str(windows[0]):
+            windows = map(text.nametowidget, windows)  # name is converted to widget object
+        if cls is not None:
+            windows = [w for w in windows if isinstance(w, cls)]
+        return windows
 
 
 if __name__ == "__main__":
