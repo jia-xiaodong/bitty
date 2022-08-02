@@ -641,6 +641,7 @@ class OpenDocDlg(jtk.ModalDialog):
     # 2 sorting methods
     SORT_BY_ID = 0
     SORT_BY_DATE = 1
+    SORT_BY_SIZE = 2
     """
     @return a tuple(array of serial number, array of DBRecordDoc, current page)
     """
@@ -649,7 +650,7 @@ class OpenDocDlg(jtk.ModalDialog):
         def __init__(self):
             self._hits = []
             self._curr_page = 0
-            self._sort_states = [False, False]
+            self._sort_states = [False, False, False]
 
         @property
         def hits(self):
@@ -740,7 +741,7 @@ class OpenDocDlg(jtk.ModalDialog):
         self._note_list.heading('Date', text='Date', command=self.sort_by_date_)
         width = tkFont.Font().measure('9999.99 MB')
         self._note_list.column('Size', width=width, minwidth=width, anchor=tk.E)
-        self._note_list.heading('Size', text='Size')
+        self._note_list.heading('Size', text='Size', command=self.sort_by_size_)
 
     def apply(self):
         try:
@@ -854,6 +855,11 @@ class OpenDocDlg(jtk.ModalDialog):
     def sort_by_date_(self):
         self._state.sort_switch(OpenDocDlg.SORT_BY_DATE)
         self._state.hits.sort(key=lambda i: i.date, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE))
+        self.jump_page_(0)
+
+    def sort_by_size_(self):
+        self._state.sort_switch(OpenDocDlg.SORT_BY_SIZE)
+        self._state.hits.sort(key=lambda i: i.size, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_SIZE))
         self.jump_page_(0)
 
     def loop_tab_next_(self, evt=None):
