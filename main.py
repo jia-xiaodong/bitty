@@ -584,7 +584,7 @@ class NotePreview:
     LINES_MAX = 15
     LINE_WIDTH = 40
 
-    def __init__(self, master, database, note):
+    def __init__(self, master, database, note: jdb.DBRecordDoc):
         self._top = top = tk.Toplevel(master, bd=1, relief=tk.RIDGE)
         top.transient(master)  # floating above master always
         #
@@ -597,6 +597,8 @@ class NotePreview:
         tk.Label(top, text='Tags: %s' % tags).pack(side=tk.TOP, anchor=tk.W)
         #
         tk.Label(top, text='Edited: %s' % note.date).pack(side=tk.TOP, anchor=tk.W)
+        #
+        tk.Label(top, text='Size: %d B' % note.size).pack(side=tk.TOP, anchor=tk.W)
         #
         content, _ = database.read_doc(note.sn)
         content = json.loads(content).pop("text", '')
@@ -714,7 +716,7 @@ class OpenDocDlg(jtk.ModalDialog):
         frm = tk.LabelFrame(master, text='Result:')
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         #
-        self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date'],
+        self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date', 'Size'],
                                        show='headings',  # hide first icon column
                                        height=OpenDocDlg.PAGE_NUM,
                                        selectmode=tk.EXTENDED)  # multiple rows can be selected
@@ -736,6 +738,9 @@ class OpenDocDlg(jtk.ModalDialog):
         width = tkFont.Font().measure('9999-99-99')
         self._note_list.column('Date', width=width, minwidth=width)
         self._note_list.heading('Date', text='Date', command=self.sort_by_date_)
+        width = tkFont.Font().measure('9999.99 MB')
+        self._note_list.column('Size', width=width, minwidth=width, anchor=tk.E)
+        self._note_list.heading('Size', text='Size')
 
     def apply(self):
         try:
@@ -772,7 +777,7 @@ class OpenDocDlg(jtk.ModalDialog):
         start = n * OpenDocDlg.PAGE_NUM
         stop = start + OpenDocDlg.PAGE_NUM
         for i, j in enumerate(self._state.hits[start:stop]):
-            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date])
+            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date, self.intuitive_nb_str(j.size)])
         if len(self._state.hits) > 0:
             self._note_list.selection_set('0')  # automatically select the 1st one
             self._note_list.focus('0')  # give the 1st one focus (visually)
@@ -873,6 +878,15 @@ class OpenDocDlg(jtk.ModalDialog):
             self._preview = None
             return
         super().cancel(event)
+
+    @staticmethod
+    def intuitive_nb_str(n: int):
+        if n < 1024:
+            return '{} B'.format(n)
+        elif n < 1024 * 1024:
+            return '{:.2f} KB'.format(n / 1024)
+        else:
+            return '{:.2f} MB'.format(n / (1024 * 1024))
 
 
 class EntryOps:

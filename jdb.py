@@ -156,7 +156,7 @@ class DBRecordDoc(object):
     @note: represents a database record in table "docs". For the table's columns, refer
            to the definition of enum "DocCols".
     """
-    def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0):
+    def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0, size=0):
         self._sn = sn
         self._title = title
         self._text = text  # json-format string
@@ -164,6 +164,7 @@ class DBRecordDoc(object):
         self._tags = tags
         self._date = datetime.date.today() if date is None else date
         self._dirty_flags = set()
+        self._size = size
         #
         # textual content and images are large data. In order to save memory space,
         # use digests to judge if they're changed.
@@ -239,6 +240,10 @@ class DBRecordDoc(object):
     @sn.setter
     def sn(self, value):
         self._sn = value
+
+    @property
+    def size(self):
+        return self._size
 
     @property
     def fragile(self):
@@ -355,19 +360,19 @@ class DocBase(object):
                 self._con.create_function('Contain', 1, contain_words)
                 clauses.append('Contain(text)')
             # construct final SQL statement
-            sql = 'SELECT id,title,tags,date FROM docs'
+            sql = 'SELECT id,title,tags,date,LENGTH(text)+LENGTH(bulk) FROM docs'
             if len(clauses) > 0:
                 sql = '%s WHERE %s' % (sql, ' AND '.join(clauses))
             cur = self._con.cursor()
             cur.execute(sql)
             docs = []
-            for sn, tt, tg, dt in cur.fetchall():
+            for sn, tt, tg, dt, sz in cur.fetchall():
                 tg = [] if tg == '' else [int(i) for i in tg.split(',')]
                 tg = [DBRecordTag.forest_find(self._tags, i) for i in tg]
                 if not tags is None:
                     if not any(DBRecordTag.forest_find(tags, i.sn) for i in tg):
                         continue
-                docs.append(DBRecordDoc(tt, None, None, tg, dt, sn))
+                docs.append(DBRecordDoc(tt, None, None, tg, dt, sn, sz))
             return docs
         except Exception as e:
             print('Error on select: %s' % e)
