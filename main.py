@@ -733,13 +733,15 @@ class OpenDocDlg(jtk.ModalDialog):
         self.bind('<Next>', self.loop_tab_next_)
         self.bind('<Prior>', self.loop_tab_prev_)
         #
-        self._note_list.column('ID', width=20, minwidth=20)
+        default_font = tkFont.Font()
+        width = default_font.measure('999')
+        self._note_list.column('ID', width=width, minwidth=min(30, width))
         self._note_list.heading('ID', text='ID', command=self.sort_by_id_)
         self._note_list.heading('Title', text='Title')
-        width = tkFont.Font().measure('9999-99-99')
+        width = default_font.measure('9999-99-99')
         self._note_list.column('Date', width=width, minwidth=width)
         self._note_list.heading('Date', text='Date', command=self.sort_by_date_)
-        width = tkFont.Font().measure('9999.99 MB')
+        width = default_font.measure('9999.99 MB')
         self._note_list.column('Size', width=width, minwidth=width, anchor=tk.E)
         self._note_list.heading('Size', text='Size', command=self.sort_by_size_)
 
@@ -1331,13 +1333,14 @@ class MainApp(tk.Tk):
         jtk.CreateToolTip(btn, 'Insert Text Table')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+        #
         n += 1
         ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_underline_)
         btn.image = ico
         btn.pack(side=tk.LEFT)
         jtk.CreateToolTip(btn, 'Format: Underline')
-        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
         ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
@@ -1346,8 +1349,17 @@ class MainApp(tk.Tk):
         btn.pack(side=tk.LEFT)
         jtk.CreateToolTip(btn, 'Format: List')
         self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
-        n += 3
+        n += 1
+        ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
+        btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_code_snippet_)
+        btn.image = ico
+        btn.pack(side=tk.LEFT)
+        jtk.CreateToolTip(btn, 'Format: Code Snippet')
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
+        #
+        n += 2
         ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
         btn = tk.Button(toolbar, image=ico, relief=tk.FLAT, command=self.edit_a_tip_)
         btn.image = ico
@@ -1778,6 +1790,35 @@ At the age of 40.
         except Exception as e:
             print('Error: %s' % e)
 
+    def edit_code_snippet_(self):
+        try:
+            editor = self._editor.active
+            core = editor.core()
+            sel_range = core.tag_ranges(tk.SEL)
+            if len(sel_range) == 0:
+                return
+            # select whole line
+            sel_range = (core.index(f'{sel_range[0]} linestart'), core.index(f'{sel_range[1]} +1 lines linestart'))
+            if len(core.get(sel_range[1])) == 0:
+                core.insert(tk.END, '\n')
+            core.tag_remove(tk.SEL, '1.0', tk.END)  # unselect text to avoid accidental deletion
+            #
+            fully_included = False
+            it = iter(core.tag_ranges('code'))
+            for s in it:
+                e = next(it)
+                if core.compare(s, '<=', sel_range[0]) and core.compare(e, '>=', sel_range[1]):
+                    fully_included = True
+                    break
+            #
+            if fully_included:
+                core.tag_remove('code', *sel_range)
+            else:
+                core.tag_add('code', *sel_range)
+            editor.on_modified()
+        except Exception as e:
+            print('Error: %s' % e)
+
     def edit_make_superscript_(self):
         self.toggle_format_('sup', 'sub')
 
@@ -1885,6 +1926,7 @@ At the age of 40.
         font = tkFont.Font(font=text['font'])
         text.tag_config('underline', underline=1)
         text.tag_config('list', lmargin1=12, lmargin2=12)  # 12 pixels, for list
+        text.tag_config('code', background='black', foreground='white')
         #
         height = font.metrics("linespace")
         text.tag_config('sup', offset=height / 3)
@@ -2035,7 +2077,12 @@ At the age of 40.
         subs = ['%s %s' % (str(s), str(next(it))) for s in it]
         if len(subs) > 0:
             textual['sub'] = subs
-        # 8. tips
+        # 8. code
+        it = iter(text.tag_ranges('code'))
+        subs = ['%s %s' % (str(s), str(next(it))) for s in it]
+        if len(subs) > 0:
+            textual['code'] = subs
+        # 9. tips
         tips = self._tip_mgr.export_format(text)
         if len(tips) > 0:
             textual['tip'] = tips
@@ -2095,7 +2142,11 @@ At the age of 40.
             for pos in textual.pop('sub', []):
                 pos = pos.split(' ')
                 core.tag_add('sub', *pos)
-            # 8. tips
+            # 8. subscription
+            for pos in textual.pop('code', []):
+                pos = pos.split(' ')
+                core.tag_add('code', *pos)
+            # 9. tips
             for i, t in enumerate(textual.pop('tip', [])):
                 self._tip_mgr.insert(core, t['text'], t['start'], t['end'], i)
             #
