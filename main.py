@@ -1424,7 +1424,7 @@ class MainApp(tk.Tk):
 
     def menu_database_new_(self):
         filename = tkFileDialog.asksaveasfilename(defaultextension='.sqlite3')
-        if filename is '':
+        if filename == '':
             return
         if os.path.exists(filename):
             tkMessageBox.showinfo(MainApp.TITLE, 'Please delete it in File Explorer')
@@ -1438,7 +1438,7 @@ class MainApp(tk.Tk):
         option = {'filetypes': [('SQLite3 File', ('*.db3', '*.s3db', '*.sqlite3', '*.sl3')),
                                 ('All Files', ('*.*',))]}
         filename = tkFileDialog.askopenfilename(**option)
-        if filename is '':
+        if filename == '':
             return
         # if same database, ignore
         if self._store is not None and self._store.source == filename:

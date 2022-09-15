@@ -261,22 +261,22 @@ class CalendarDlg(tk.Toplevel):
         row = w.identify_row(evt.y)
         col = w.identify_column(evt.x)
         text = w.set(row, col)
-        if text is '':
+        if text == '':
             return
         self.draw_highlight_(row, col, text)
         self.date = datetime.date(self.date.year, self.date.month, int(text))
 
     def auto_resize_(self, evt):
-        if self._canvas.itemcget(self._day_selected, 'text') is '':
+        if self._canvas.itemcget(self._day_selected, 'text') == '':
             self.after(100, self.highlight_today_)
             return
         x, y = self._canvas.coords(self._day_selected)
         row = self._month_days.identify_row(int(y)+self._canvas.winfo_y())
         col = self._month_days.identify_column(int(x) + self._canvas.winfo_x())
-        if row is '' or col is '':
+        if row == '' or col == '':
             return
         text = self._month_days.set(row, col)
-        if text is '':
+        if text == '':
             return
         self.draw_highlight_(row, col, text)
 
