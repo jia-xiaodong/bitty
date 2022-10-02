@@ -1197,8 +1197,8 @@ class DocCompareDlg(jtk.ModalDialog):
         tk.Label(master, text='Result:').pack(side=tk.TOP, anchor=tk.W)
         frame = tk.Frame(master)
         frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
-        tk.Label(frame, text='this').pack(side=tk.LEFT, anchor=tk.CENTER)
-        tk.Label(frame, text='that').pack(side=tk.LEFT, anchor=tk.CENTER)
+        tk.Label(frame, text='this').pack(side=tk.LEFT, anchor=tk.CENTER, fill=tk.BOTH, expand=tk.YES)
+        tk.Label(frame, text='that').pack(side=tk.LEFT, anchor=tk.CENTER, fill=tk.BOTH, expand=tk.YES)
         frame = tk.Frame(master)
         frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         columns = ['id', 'title']
