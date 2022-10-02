@@ -11,7 +11,7 @@ if jex.isPython3():
     import tkinter.messagebox as tkMessageBox
     import tkinter.filedialog as tkFileDialog
     import tkinter.font as tkFont
-    from enum import Enum
+    from enum import Enum, IntEnum
 
 else:
     import Tkinter as tk
@@ -1250,6 +1250,29 @@ class DocCompareDlg(jtk.ModalDialog):
             self._tv2.insert('', tk.END, values=(doc[0], doc[1]))
 
 
+class MenuId(IntEnum):
+    DATABASE_CLOSE = 2
+
+    DOC_NEW = 0
+    DOC_OPEN = 1
+    DOC_SAVE = 2
+    DOC_CLOSE = 3
+    DOC_DELETE = 4
+    DOC_EXPORT_HTML = 5
+    DOC_COPY_DB = 6
+    DOC_COMPARE_DB = 7
+
+    # 数字不连续是因为分隔符的存在
+    EDIT_IMAGE = 0
+    EDIT_TABLE = 1
+    EDIT_UNDERLINE = 3
+    EDIT_LIST = 4
+    EDIT_SUP = 5
+    EDIT_SUB = 6
+    EDIT_TIP = 7
+    EDIT_CLIPBOARD = 9
+
+
 class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
@@ -1296,51 +1319,50 @@ class MainApp(tk.Tk):
         menu.add_command(label='New', command=self.menu_database_new_)
         menu.add_command(label='Open', command=self.menu_database_open_)
         menu.add_command(label='Close', command=self.menu_database_close_)
-        # 2 is the index of sub-menu 'Close'. It's effective when DB exists (EVENT_DB_EXIST).
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 2)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DATABASE_CLOSE))
         menu.add_separator()
         menu.add_command(label='Quit', command=self.quit_)
         menu_bar.add_cascade(label='Database', menu=menu)
         # doc
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='New', command=self.menu_doc_new_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 0)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_NEW))
         menu.add_command(label='Open', command=self.menu_doc_open_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 1)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_OPEN))
         menu.add_command(label='Save', command=self.menu_doc_save_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 2)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_SAVE))
         menu.add_command(label='Close', command=self.menu_doc_close_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 3)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_CLOSE))
         menu.add_command(label='Delete', command=self.menu_doc_delete_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 4)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_DELETE))
         menu.add_command(label='Export to HTML', command=self.doc_export_html_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 5)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_EXPORT_HTML))
         menu.add_command(label='Copy to Other DB', command=self.doc_copy_elsewhere_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 6)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_COPY_DB))
         menu.add_command(label='Compare to Other DB', command=self.doc_compare)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 7)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_COMPARE_DB))
         menu_bar.add_cascade(label='Document', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 1)
         # edit
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='Insert Image File', command=self.edit_insert_image_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 0)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_IMAGE))
         menu.add_command(label='Insert Text Table', command=self.edit_insert_table_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 1)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_TABLE))
         menu.add_separator()  # separator holds one place (index 2) in menu
         menu.add_command(label='Make Underline', command=self.edit_underline_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 3)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_UNDERLINE))
         menu.add_command(label='Make List', command=self.edit_mark_list_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 4)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_LIST))
         menu.add_command(label='Make Superscript', command=self.edit_make_superscript_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 5)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_SUP))
         menu.add_command(label='Make Subscript', command=self.edit_make_subscript_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 6)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_SUB))
         menu.add_command(label='Edit a Tip', command=self.edit_a_tip_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 7)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_TIP))
         menu.add_separator()
         menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 9)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_CLIPBOARD))
         menu_bar.add_cascade(label='Edit', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 2)
         # help
@@ -1414,6 +1436,7 @@ class MainApp(tk.Tk):
         btn.image = ico
         btn.pack(side=tk.LEFT)
         jtk.CreateToolTip(btn, 'Format: Underline')
+        self.add_listener(btn, MainApp.EVENT_DOC_EXIST)
         #
         n += 1
         ico = ImageTk.PhotoImage(im.crop((0, 32 * n, 31, 32 * (n + 1) - 1)))
