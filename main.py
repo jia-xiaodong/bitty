@@ -1179,6 +1179,77 @@ class DocCopyDlg(jtk.ModalDialog):
         return record_id
 
 
+class DocCompareDlg(jtk.ModalDialog):
+    def __init__(self, master, *a, **kw):
+        self._storePath = tk.StringVar()
+        self._this_database = kw.pop('me')
+        jtk.ModalDialog.__init__(self, master, *a, **kw)
+
+    def body(self, master):
+        frame = tk.Frame(master)
+        frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        tk.Label(frame, text='Another:').pack(side=tk.LEFT)
+        e1 = tk.Entry(frame, textvariable=self._storePath)
+        e1.pack(side=tk.LEFT, expand=tk.YES, fill=tk.X)
+        tk.Button(frame, text='Browse', command=self.onclick_browse).pack(side=tk.LEFT)
+        tk.Button(frame, text='Compare', command=self.onclick_compare).pack(side=tk.LEFT)
+        #
+        tk.Label(master, text='Result:').pack(side=tk.TOP, anchor=tk.W)
+        frame = tk.Frame(master)
+        frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        tk.Label(frame, text='this').pack(side=tk.LEFT, anchor=tk.CENTER)
+        tk.Label(frame, text='that').pack(side=tk.LEFT, anchor=tk.CENTER)
+        frame = tk.Frame(master)
+        frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        columns = ['id', 'title']
+        font = tkFont.Font()
+        dw = max(font.measure(d) for d in '0123456789')
+        tv1 = ttk.Treeview(frame, show='headings', height=5, columns=columns, selectmode=tk.BROWSE)
+        tv1.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.YES)
+        tv1.column('#1', width=dw*3, anchor=tk.W)
+        tv1.heading('#1', text=columns[0])
+        tv1.column('#2', width=dw*40, anchor=tk.W)
+        tv1.heading('#2', text=columns[1])
+        self._tv1 = tv1
+        tv2 = ttk.Treeview(frame, show='headings', height=5, columns=columns, selectmode=tk.BROWSE)
+        tv2.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.YES)
+        tv2.column('#1', width=dw*3, anchor=tk.W)
+        tv2.heading('#1', text=columns[0])
+        tv2.column('#2', width=dw*40, anchor=tk.W)
+        tv2.heading('#2', text=columns[1])
+        self._tv2 = tv2
+
+    def onclick_browse(self):
+        filename = tkFileDialog.askopenfilename()
+        if filename == '':
+            return
+        if self._this_database.source == filename:
+            tkMessageBox.showerror(MainApp.TITLE, 'Same file!')
+            return
+        self._storePath.set(filename)
+
+    def onclick_compare(self):
+        database = self._storePath.get()
+        if not os.path.exists(database):
+            return
+        if not jdb.DocBase.validate(database):
+            tkMessageBox.showerror(MainApp.TITLE, 'Database format is different!')
+            return
+        this_hashes = self._this_database.get_hashes()
+        that_hashes = jdb.DocBase(database).get_hashes()
+        h1 = set([d for s, t, d in this_hashes])
+        h2 = set([d for s, t, d in that_hashes])
+        common = h1.intersection(h2)
+        this_docs = [(sn, title) for sn, title, digest in this_hashes if digest not in common]
+        that_docs = [(sn, title) for sn, title, digest in that_hashes if digest not in common]
+        self._tv1.delete(*self._tv1.get_children())
+        for doc in this_docs:
+            self._tv1.insert('', tk.END, values=(doc[0], doc[1]))
+        self._tv2.delete(*self._tv2.get_children())
+        for doc in that_docs:
+            self._tv2.insert('', tk.END, values=(doc[0], doc[1]))
+
+
 class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
@@ -1246,6 +1317,8 @@ class MainApp(tk.Tk):
         self.add_listener(menu, MainApp.EVENT_DOC_EXIST, 5)
         menu.add_command(label='Copy to Other DB', command=self.doc_copy_elsewhere_)
         self.add_listener(menu, MainApp.EVENT_DB_EXIST, 6)
+        menu.add_command(label='Compare to Other DB', command=self.doc_compare)
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, 7)
         menu_bar.add_cascade(label='Document', menu=menu)
         self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 1)
         # edit
@@ -1920,6 +1993,10 @@ At the age of 40.
         num = self._store.copy_docs(records, database)
         quiz = 'records are duplicated to'
         tkMessageBox.showinfo(MainApp.TITLE, '%d %s\n%s.' % (num, quiz, os.path.basename(database)))
+
+    def doc_compare(self):
+        dlg = DocCompareDlg(self, me=self._store)
+        dlg.show()
 
     def config_core(self, editor):
         text = editor.core()

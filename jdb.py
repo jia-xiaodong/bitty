@@ -566,3 +566,21 @@ class DocBase(object):
     @staticmethod
     def assign_finder(function):
         DocBase.find_words = function
+
+    def get_hashes(self):
+        def my_hash(text: bytes, bulk: bytes):
+            m = hashlib.sha1()
+            m.update(text)
+            m.update(bulk)
+            return m.hexdigest()
+        results = []
+        try:
+            self._con.create_function('MY_HASH', 2, my_hash)
+            sql = 'SELECT id,title,MY_HASH(text, bulk) FROM docs'
+            cur = self._con.cursor()
+            cur.execute(sql)
+            for sn, title, digest in cur.fetchall():
+                results.append((sn, title, digest))
+        except Exception as e:
+            print(e)
+        return results
