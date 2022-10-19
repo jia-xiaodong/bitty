@@ -635,6 +635,34 @@ class NotePreview:
         self._top.destroy()
 
 
+class StatedDoc(jdb.DBRecordDoc):
+    """
+    除了数据表的记录的原始数据，还保存了附加状态
+    """
+    def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0, size=0):
+        jdb.DBRecordDoc.__init__(self, title, text, bulk, tags, date, sn, size)
+        self._readonly = False
+
+    @property
+    def readonly(self):
+        return self._readonly
+
+    @readonly.setter
+    def readonly(self, value):
+        self._readonly = value
+
+    @staticmethod
+    def from_db(raw: jdb.DBRecordDoc):
+        result = StatedDoc(None)
+        result._sn = raw.sn
+        result._title = raw.title
+        result._text = raw.script
+        result._bulk = raw.bulk
+        result._tags = raw.tags
+        result._date = raw.date
+        return result
+
+
 class OpenDocDlg(jtk.ModalDialog):
     # 8 items per page
     PAGE_NUM = 8
@@ -832,7 +860,8 @@ class OpenDocDlg(jtk.ModalDialog):
         if len(conditions) == 0:
             self._state.clear()
         else:
-            self._state.hits[:] = self._store.select_doc(**conditions)
+            docs = self._store.select_doc(**conditions)
+            self._state.hits[:] = [StatedDoc.from_db(i) for i in docs]
         jtk.MessageBubble(self._btn_search, '%d found' % len(self._state.hits))
         self.jump_page_(0)
 
@@ -939,22 +968,6 @@ class EntryOps:
         if not isinstance(w, tk.Entry):
             return
         w.event_generate('<<Paste>>')
-
-
-class RelyItem:
-    def __init__(self, w, evt, sid=-1):
-        """
-        @param w is Tkinter widget, could be menu or button
-        @note: if w is a menu, then sid is the index of its sub-menu item.
-        """
-        self._w = w
-        self._c = sid
-
-    def set_state(self, state):
-        if self._c > -1:  # menu item
-            self._w.entryconfig(self._c, state=state)
-        else:  # button
-            self._w.config(state=state)
 
 
 class TipManager(object):
@@ -1251,6 +1264,12 @@ class DocCompareDlg(jtk.ModalDialog):
 
 
 class MenuId(IntEnum):
+    INVALID = -1
+
+    ROOT_DB = 1
+    ROOT_DOC = 2
+    ROOT_EDIT = 3
+
     DATABASE_CLOSE = 2
 
     DOC_NEW = 0
@@ -1271,6 +1290,23 @@ class MenuId(IntEnum):
     EDIT_SUB = 6
     EDIT_TIP = 7
     EDIT_CLIPBOARD = 9
+    EDIT_READONLY = 10
+
+
+class RelyItem:
+    def __init__(self, w, evt, sid: MenuId = MenuId.INVALID):
+        """
+        @param w is Tkinter widget, could be menu or button
+        @note: if w is a menu, then sid is the index of its sub-menu item.
+        """
+        self._w = w
+        self._c = sid
+
+    def set_state(self, state):
+        if self._c > MenuId.INVALID:  # menu item
+            self._w.entryconfig(int(self._c), state=state)
+        else:  # button
+            self._w.config(state=state)
 
 
 class MainApp(tk.Tk):
@@ -1308,63 +1344,61 @@ class MainApp(tk.Tk):
         self.misc_()
 
     def init_menu_(self):
-        if jex.isPython3():
-            top_start = 1
-        else:
-            top_start = 0
-
         menu_bar = tk.Menu(self)
         # database
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='New', command=self.menu_database_new_)
         menu.add_command(label='Open', command=self.menu_database_open_)
         menu.add_command(label='Close', command=self.menu_database_close_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DATABASE_CLOSE))
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, MenuId.DATABASE_CLOSE)
         menu.add_separator()
         menu.add_command(label='Quit', command=self.quit_)
         menu_bar.add_cascade(label='Database', menu=menu)
         # doc
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='New', command=self.menu_doc_new_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_NEW))
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, MenuId.DOC_NEW)
         menu.add_command(label='Open', command=self.menu_doc_open_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_OPEN))
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, MenuId.DOC_OPEN)
         menu.add_command(label='Save', command=self.menu_doc_save_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_SAVE))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.DOC_SAVE)
         menu.add_command(label='Close', command=self.menu_doc_close_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_CLOSE))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.DOC_CLOSE)
         menu.add_command(label='Delete', command=self.menu_doc_delete_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_DELETE))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.DOC_DELETE)
         menu.add_command(label='Export to HTML', command=self.doc_export_html_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.DOC_EXPORT_HTML))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.DOC_EXPORT_HTML)
         menu.add_command(label='Copy to Other DB', command=self.doc_copy_elsewhere_)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_COPY_DB))
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, MenuId.DOC_COPY_DB)
         menu.add_command(label='Compare to Other DB', command=self.doc_compare)
-        self.add_listener(menu, MainApp.EVENT_DB_EXIST, int(MenuId.DOC_COMPARE_DB))
+        self.add_listener(menu, MainApp.EVENT_DB_EXIST, MenuId.DOC_COMPARE_DB)
         menu_bar.add_cascade(label='Document', menu=menu)
-        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 1)
+        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, MenuId.ROOT_DOC)
         # edit
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='Insert Image File', command=self.edit_insert_image_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_IMAGE))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_IMAGE)
         menu.add_command(label='Insert Text Table', command=self.edit_insert_table_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_TABLE))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_TABLE)
         menu.add_separator()  # separator holds one place (index 2) in menu
         menu.add_command(label='Make Underline', command=self.edit_underline_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_UNDERLINE))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_UNDERLINE)
         menu.add_command(label='Make List', command=self.edit_mark_list_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_LIST))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_LIST)
         menu.add_command(label='Make Superscript', command=self.edit_make_superscript_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_SUP))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_SUP)
         menu.add_command(label='Make Subscript', command=self.edit_make_subscript_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_SUB))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_SUB)
         menu.add_command(label='Edit a Tip', command=self.edit_a_tip_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_TIP))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_TIP)
         menu.add_separator()
         menu.add_command(label='Copy from Clipboard', command=self.copy_from_clipboard_)
-        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, int(MenuId.EDIT_CLIPBOARD))
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_CLIPBOARD)
+        self._doc_readonly = tk.BooleanVar(value=0)
+        menu.add_checkbutton(label='Readonly', onvalue=1, offvalue=0, variable=self._doc_readonly, command=self.toggle_doc_readonly_)
+        self.add_listener(menu, MainApp.EVENT_DOC_EXIST, MenuId.EDIT_READONLY)
         menu_bar.add_cascade(label='Edit', menu=menu)
-        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, top_start + 2)
+        self.add_listener(menu_bar, MainApp.EVENT_DB_EXIST, MenuId.ROOT_EDIT)
         # help
         menu = tk.Menu(menu_bar, tearoff=0)
         menu.add_command(label='About', command=self.menu_help_about_)
@@ -1630,7 +1664,7 @@ class MainApp(tk.Tk):
             record = self._notes[editor]
         except KeyError:
             title = self._editor.get_caption(editor)
-            record = jdb.DBRecordDoc(title)
+            record = StatedDoc(title)
         #
         # specify tags / title / date
         if MainApp.unnamed(record.title) or len(record.tags) == 0:
@@ -1728,7 +1762,7 @@ At the age of 40.
             record = self._notes[editor]
         except KeyError:
             title = self._editor.get_caption(editor)
-            record = jdb.DBRecordDoc(title)
+            record = StatedDoc(title)
         #
         dlg = DocPropertyDlg(self, database=self._store, record=record)
         if dlg.show() is False:
@@ -1776,6 +1810,12 @@ At the age of 40.
                 self._font_family.set(font.cget('family'))
             if font.cget('size') != size:
                 self._font_size.set(font.cget('size'))
+            #
+            if editor in self._notes:
+                self._doc_readonly.set(self._notes[editor].readonly)
+            else:
+                self._doc_readonly.set(False)  # 未保存的文档永远都可以编辑
+
 
     def font_changed_(self):
         family = self._font_family.get()
@@ -1807,7 +1847,7 @@ At the age of 40.
         elif jex.is_win():
             self.bind('<Control-O>', lambda e: self.menu_database_open_())
 
-    def add_listener(self, wgt, evt, sid=-1):
+    def add_listener(self, wgt, evt, sid: MenuId = MenuId.INVALID):
         """
         @param wgt: widget.
         @param evt: event.
@@ -2050,6 +2090,16 @@ At the age of 40.
         content = '\n'.join(content.splitlines())
         editor.core().insert(tk.INSERT, content)
         editor.core().see(tk.INSERT)
+
+    def toggle_doc_readonly_(self):
+        editor = self._editor.active
+        if editor not in self._notes:
+            self._doc_readonly.set(False)
+            return
+        doc = self._notes[editor]
+        doc.readonly = not doc.readonly
+        self._doc_readonly.set(doc.readonly)
+        editor.core()['state'] = tk.DISABLED if doc.readonly else tk.NORMAL
 
     def edit_a_tip_(self):
         editor = self._editor.active
