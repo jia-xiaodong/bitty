@@ -1812,7 +1812,9 @@ At the age of 40.
                 self._font_size.set(font.cget('size'))
             #
             if editor in self._notes:
-                self._doc_readonly.set(self._notes[editor].readonly)
+                ro = self._notes[editor].readonly
+                self._doc_readonly.set(ro)
+                core['state'] = tk.DISABLED if ro else tk.NORMAL
             else:
                 self._doc_readonly.set(False)  # 未保存的文档永远都可以编辑
 
