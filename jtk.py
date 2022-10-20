@@ -1659,6 +1659,10 @@ class TextTableBox(tk.Canvas, StorageMixin):
             json_str = json.dumps(table.output())
             self.clipboard_append(json_str)
 
+        def set_readonly(self, is_readonly: bool):
+            for i in range(6):
+                self.entryconfig(i, state=tk.DISABLED if is_readonly else tk.NORMAL)
+
     HEIGHT = 0
     PADDING = 0
 
@@ -1690,6 +1694,8 @@ class TextTableBox(tk.Canvas, StorageMixin):
         #
         self.bind(jex.mouse_right_button(), self.on_popup_menu_)
         self._menu = TextTableBox.Popup(self)
+        #
+        self._is_readonly = False
 
     def draw_table(self, rows, cols):
         self.delete(tk.ALL)
@@ -1794,6 +1800,9 @@ class TextTableBox(tk.Canvas, StorageMixin):
     def finish_edit_(self, evt):
         # avoid conflict between Ctrl-Enter and <Leave> event
         if not self._edited.winfo_ismapped():
+            return
+        if self._is_readonly:
+            self.hide_input_()
             return
         content = self._edited.get('1.0', tk.END)
         content = content.strip(' \n')
@@ -2194,6 +2203,15 @@ class TextTableBox(tk.Canvas, StorageMixin):
 
     def nth_row(self, cell_idx):
         return int(cell_idx / self.grid_cols())
+
+    @property
+    def readonly(self):
+        return self._is_readonly
+
+    @readonly.setter
+    def readonly(self, value: bool):
+        self._is_readonly = value
+        self._menu.set_readonly(value)
 
 
 def unit_test_calendar():

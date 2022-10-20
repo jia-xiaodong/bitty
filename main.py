@@ -1818,7 +1818,6 @@ At the age of 40.
             else:
                 self._doc_readonly.set(False)  # 未保存的文档永远都可以编辑
 
-
     def font_changed_(self):
         family = self._font_family.get()
         size = int(self._font_size.get())
@@ -2100,8 +2099,13 @@ At the age of 40.
             return
         doc = self._notes[editor]
         doc.readonly = not doc.readonly
+        # 1. UI: menu checkbox
         self._doc_readonly.set(doc.readonly)
+        # 2. UI control: disabled
         editor.core()['state'] = tk.DISABLED if doc.readonly else tk.NORMAL
+        # 3. UI control's children
+        for table in self.all_custom_windows(editor.core(), jtk.TextTableBox):
+            table.readonly = doc.readonly
 
     def edit_a_tip_(self):
         editor = self._editor.active
