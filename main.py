@@ -660,6 +660,7 @@ class StatedDoc(jdb.DBRecordDoc):
         result._bulk = raw.bulk
         result._tags = raw.tags
         result._date = raw.date
+        result._size = raw.size
         return result
 
 
