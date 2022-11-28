@@ -2032,7 +2032,7 @@ At the age of 40.
         try:
             ts = self.clipboard_get()
             table = json.loads(ts)
-        except ValueError:
+        except Exception as e:
             table = [[{"text": "single-click"}, {"text": "to select"}, {"text": "table cell"}],
                      [{"text": "double-click"}, {"text": "to edit"}, {"text": "text"}],
                      [{"text": "control-enter"}, {"text": "to finish"}, {"text": "input"}]]
