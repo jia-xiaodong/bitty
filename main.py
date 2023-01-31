@@ -1551,7 +1551,10 @@ class MainApp(tk.Tk):
         self._editor = editor
 
     def init_status_bar_(self):
-        pass
+        sub = tk.Frame(self)
+        sub.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=tk.NO)
+        w = ttk.Sizegrip(sub)
+        w.pack(side=tk.RIGHT, fill=tk.BOTH, expand=tk.NO)
 
     def menu_database_new_(self):
         filename = tkFileDialog.asksaveasfilename(defaultextension='.sqlite3')
