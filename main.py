@@ -2016,8 +2016,9 @@ At the age of 40.
             editor = self._editor.active
             core = editor.core()
             if len(images) == 1:
-                image = jtk.ImageBox(core, image=open(images[0], 'rb'), ext=os.path.splitext(images[0])[1])
-                core.window_create(tk.INSERT, window=image)
+                with open(images[0], 'rb') as fi:
+                    image = jtk.ImageBox(core, image=io.BytesIO(fi.read()), ext=os.path.splitext(images[0])[1])
+                    core.window_create(tk.INSERT, window=image)
             else:
                 # a hidden trick: copy start-number from clipboard
                 try:
@@ -2026,9 +2027,10 @@ At the age of 40.
                     start = 0
                 #
                 for i, each in enumerate(images):
-                    core.insert(tk.INSERT, '\n%d\n' % (i + start + 1))
-                    image = jtk.ImageBox(core, image=open(each, 'rb'), ext=os.path.splitext(each)[1])
-                    core.window_create(tk.INSERT, window=image)
+                    with open(each, 'rb') as fi:
+                        core.insert(tk.INSERT, '\n%d\n' % (i + start + 1))
+                        image = jtk.ImageBox(core, image=io.BytesIO(fi.read()), ext=os.path.splitext(each)[1])
+                        core.window_create(tk.INSERT, window=image)
         editor.on_modified()
 
     def edit_insert_table_(self):
