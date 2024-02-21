@@ -20,7 +20,8 @@ if jex.isPython3():
         bulk = 3
         tags = 4
         date = 5
-        COUNT = 6
+        date2 = 6
+        COUNT = 7
 
 
     class TagCols(Enum):
@@ -31,7 +32,7 @@ if jex.isPython3():
 
 
 else: # Python 2.x
-    DocCols = jex.enum2('id', 'title', 'text', 'bulk', 'tags', 'date', 'COUNT')
+    DocCols = jex.enum2('id', 'title', 'text', 'bulk', 'tags', 'date', 'date2', 'COUNT')
     TagCols = jex.enum2('id', 'name', 'base', 'COUNT')
 
 
@@ -156,13 +157,14 @@ class DBRecordDoc(object):
     @note: represents a database record in table "docs". For the table's columns, refer
            to the definition of enum "DocCols".
     """
-    def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0, size=0):
+    def __init__(self, title, text=None, bulk=None, tags=[], date=None, date2=None, sn=0, size=0):
         self._sn = sn
         self._title = title
         self._text = text  # json-format string
         self._bulk = bulk  # possible values: None, bytes 
         self._tags = tags
         self._date = datetime.date.today() if date is None else date
+        self._date2 = date2 if date2 is not None else (date if date is not None else datetime.date.today())
         self._dirty_flags = set()
         self._size = size
         #
@@ -215,6 +217,15 @@ class DBRecordDoc(object):
     def date(self, value):
         self._date = value
         self.mark_dirty_(DocCols.date)
+
+    @property
+    def date_modified(self):
+        return self._date2
+
+    @date_modified.setter
+    def date_modified(self, value):
+        self._date2 = value
+        self.mark_dirty_(DocCols.date2)
 
     @property
     def tags(self):
@@ -311,12 +322,12 @@ class DocBase(object):
             else:
                 condition = 'id in (%s)' % ','.join(str(i) for i in sn_set)
             # filter records
-            sql_select = 'SELECT title, text, bulk, date FROM docs WHERE %s' % condition
+            sql_select = 'SELECT title, text, bulk, date, date2 FROM docs WHERE %s' % condition
             cur = self._con.cursor()
             cur.execute(sql_select)
             # write to new database
-            sql_insert = 'INSERT INTO docs (title, text, bulk, tags, date) VALUES(?,?,?,?,?)'
-            docs = [(ttl, txt, blk, '', dat) for ttl, txt, blk, dat in cur.fetchall()]
+            sql_insert = 'INSERT INTO docs (title, text, bulk, tags, date, date2) VALUES(?,?,?,?,?)'
+            docs = [(ttl, txt, blk, '', dat, dat2) for ttl, txt, blk, dat, dat2 in cur.fetchall()]
             con.executemany(sql_insert, docs)
             con.commit()
             return len(docs)
@@ -327,14 +338,20 @@ class DocBase(object):
         try:
             clauses = []
             condition = conditions.pop('title', None)
-            if not condition is None:
+            if condition is not None:
                 clauses.append(condition)
             condition = conditions.pop('from', None)
-            if not condition is None:
+            if condition is not None:
                 clauses.append('date >= "%s"' % condition)  # date must be quoted using marks
             condition = conditions.pop('to', None)
-            if not condition is None:
+            if condition is not None:
                 clauses.append('date <= "%s"' % condition)
+            condition = conditions.pop('from2', None)
+            if condition is not None:
+                clauses.append('date2 >= "%s"' % condition)  # date must be quoted using marks
+            condition = conditions.pop('to2', None)
+            if condition is not None:
+                clauses.append('date2 <= "%s"' % condition)
             tags = conditions.pop('tags', None)
             #
             # judge if sn fits in between UPPER and LOWER boundary.
@@ -360,19 +377,19 @@ class DocBase(object):
                 self._con.create_function('Contain', 1, contain_words)
                 clauses.append('Contain(text)')
             # construct final SQL statement
-            sql = 'SELECT id,title,tags,date,LENGTH(text)+LENGTH(bulk) FROM docs'
+            sql = 'SELECT id,title,tags,date,date2,LENGTH(text)+LENGTH(bulk) FROM docs'
             if len(clauses) > 0:
                 sql = '%s WHERE %s' % (sql, ' AND '.join(clauses))
             cur = self._con.cursor()
             cur.execute(sql)
             docs = []
-            for sn, tt, tg, dt, sz in cur.fetchall():
+            for sn, tt, tg, dt, dt2, sz in cur.fetchall():
                 tg = [] if tg == '' else [int(i) for i in tg.split(',')]
                 tg = [DBRecordTag.forest_find(self._tags, i) for i in tg]
-                if not tags is None:
+                if tags is not None:
                     if not any(DBRecordTag.forest_find(tags, i.sn) for i in tg):
                         continue
-                docs.append(DBRecordDoc(tt, None, None, tg, dt, sn, sz))
+                docs.append(DBRecordDoc(tt, None, None, tg, dt, dt2, sn, sz))
             return docs
         except Exception as e:
             print('Error on select: %s' % e)
@@ -396,6 +413,9 @@ class DocBase(object):
             elif i == DocCols.date:
                 args['dat'] = record.date
                 cols.append('date=:dat')
+            elif i == DocCols.date2:
+                args['dat2'] = record.date
+                cols.append('date2=:dat2')
         try:
             if len(cols) > 0:
                 sql = 'UPDATE docs SET %s WHERE id=%d' % (', '.join(cols), record.sn)
@@ -406,14 +426,15 @@ class DocBase(object):
         finally:
             record.after_saving()
 
-    def insert_doc(self, record):
+    def insert_doc(self, record: DBRecordDoc):
         try:
-            sql = 'INSERT INTO docs (title, text, bulk, tags, date) VALUES(?,?,?,?,?)'
+            sql = 'INSERT INTO docs (title, text, bulk, tags, date, date2) VALUES(?,?,?,?,?,?)'
             args = (record.title,                 # title
                     DocBase.zip_(record.script),  # main text
                     sqlite3.Binary(record.bulk),  # images
                     DBRecordDoc.tags_str(record.tags),
-                    record.date)
+                    record.date,
+                    record.date_modified)
             cur = self._con.cursor()
             cur.execute(sql, args)
             self._con.commit()
@@ -535,7 +556,8 @@ class DocBase(object):
                 text  BLOB,
                 bulk  BLOB,
                 tags  TEXT,
-                date  DATE);
+                date  DATE,
+                date2 DATE);
                 CREATE TABLE tags (
                 id    INTEGER PRIMARY KEY UNIQUE NOT NULL,
                 name  TEXT,

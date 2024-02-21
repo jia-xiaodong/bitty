@@ -311,7 +311,8 @@ class DocPropertyDlg(jtk.ModalDialog):
         self._store = kw.pop('database')
         self._record = kw.pop('record')
         self._title = tk.StringVar(value=self._record.title)
-        self._date = tk.StringVar(value=str(self._record.date))
+        self._date_created = tk.StringVar(value=str(self._record.date))
+        self._date_modified = tk.StringVar(value=str(self._record.date_modified))
         #
         kw['title'] = 'Document Property'
         jtk.ModalDialog.__init__(self, master, *a, **kw)
@@ -322,16 +323,28 @@ class DocPropertyDlg(jtk.ModalDialog):
         tk.Label(frm, text='Title:').pack(side=tk.LEFT)
         self._e = tk.Entry(frm, textvariable=self._title)
         self._e.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
+        #
         frm = tk.Frame(master)
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
-        tk.Label(frm, text='Edited:').pack(side=tk.LEFT)
-        e = tk.Entry(frm, textvariable=self._date)
+        tk.Label(frm, text='Created:').pack(side=tk.LEFT)
+        e = tk.Entry(frm, textvariable=self._date_created)
         e.pack(side=tk.LEFT)
         self._indicator = tk.Label(frm, text='V', fg='dark green')
         self._indicator.pack(side=tk.LEFT)
         b = tk.Button(frm, text='...', command=self.change_date)
         b.pack(side=tk.LEFT)
-        self._date.trace('w', self.date_changed_)
+        self._date_created.trace('w', self.date_changed_)
+        #
+        frm = tk.Frame(master)
+        frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+        tk.Label(frm, text='Modified:').pack(side=tk.LEFT)
+        e = tk.Entry(frm, textvariable=self._date_modified)
+        e.pack(side=tk.LEFT)
+        self._indicator2 = tk.Label(frm, text='V', fg='dark green')
+        self._indicator2.pack(side=tk.LEFT)
+        b = tk.Button(frm, text='...', command=self.change_date2)
+        b.pack(side=tk.LEFT)
+        self._date_modified.trace('w', self.date2_changed_)
         #
         self._tag_picker = TagPicker(master, database=self._store, owned=self._record.tags[:])
         self._tag_picker.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
@@ -340,6 +353,12 @@ class DocPropertyDlg(jtk.ModalDialog):
     def apply(self):
         self._record.title = self._title.get().strip(' \n')
         self._record.tags = self._tag_picker.get_selection()
+        date = self.get_date(self._date_created)
+        if date is not None and date != self._record.date:
+            self._record.date = date
+        date = self.get_date(self._date_modified)
+        if date is not None and date != self._record.date_modified:
+            self._record.date_modified = date
         self.result = True
 
     def validate(self):
@@ -347,34 +366,54 @@ class DocPropertyDlg(jtk.ModalDialog):
         if title == '':
             jtk.MessageBubble(self._e, 'Title cannot be empty!')
             return False
+        date1 = self.get_date(self._date_created)
+        date2 = self.get_date(self._date_modified)
+        if date1 is None or date2 is None:
+            jtk.MessageBubble(self._e, 'Time format is wrong!')
+            return False
         return True
 
     def change_date(self):
-        dlg = jtk.CalendarDlg(self, date=self._record.date)
+        current_date = self.get_date(self._date_created)
+        dlg = jtk.CalendarDlg(self, date=self._record.date if current_date is None else current_date)
         dlg.show()
-        if dlg.date != self._record.date:
-            self._record.date = dlg.date
-            self._date.set(str(dlg.date))
-        self.set_indicator_(True)
+        if dlg.date != current_date:
+            self._date_created.set(str(dlg.date))
+        self.set_indicator_(self._indicator, True)
 
     def date_changed_(self, name, index, mode):
-        try:
-            dt = self._date.get()
-            dt = datetime.datetime.strptime(dt, DATE_FORMAT)
-            dt = datetime.date(year=dt.year, month=dt.month, day=dt.day)
-            if dt != self._record.date:
-                self._record.date = dt
-            self.set_indicator_(True)
-        except ValueError:
-            self.set_indicator_(False)
+        dt = self.get_date(self._date_created)
+        self.set_indicator_(self._indicator, dt is not None)
 
-    def set_indicator_(self, passed):
+    def change_date2(self):
+        current_date = self.get_date(self._date_modified)
+        dlg = jtk.CalendarDlg(self, date=self._record.date_modified if current_date is None else current_date)
+        dlg.show()
+        if dlg.date != current_date:
+            self._date_modified.set(str(dlg.date))
+        self.set_indicator_(self._indicator2, True)
+
+    def date2_changed_(self, name, index, mode):
+        dt = self.get_date(self._date_modified)
+        self.set_indicator_(self._indicator2, dt is not None)
+
+    @staticmethod
+    def set_indicator_(label, passed):
         if passed:
-            self._indicator['fg'] = 'dark green'
-            self._indicator['text'] = 'V'
+            label['fg'] = 'dark green'
+            label['text'] = 'V'
         else:
-            self._indicator['fg'] = 'red'
-            self._indicator['text'] = 'X'
+            label['fg'] = 'red'
+            label['text'] = 'X'
+
+    @staticmethod
+    def get_date(date_str_var: tk.StringVar):
+        try:
+            dt = date_str_var.get()
+            dt = datetime.datetime.strptime(dt, DATE_FORMAT)
+            return datetime.date(year=dt.year, month=dt.month, day=dt.day)
+        except ValueError:
+            return None
 
 
 class TagPickDlg(jtk.ModalDialog):
@@ -471,12 +510,24 @@ class ByDate(SearchCondition):
     @return tuple(from, to), both 'from' and 'to' are date objects (or None, if not selected).
     """
 
+    TIME_TYPE_CREATE = 0
+    TIME_TYPE_MODIFY = 1
+
     def __init__(self, master, *a, **kw):
         SearchCondition.__init__(self, master, *a, **kw)
         #
         tk.Checkbutton(self, variable=self._switch).pack(side=tk.LEFT)
+        #
+        frm = tk.LabelFrame(self, text='Type')
+        frm.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.NO, padx=5, pady=5)
+        self._time_type = tk.IntVar(value=ByDate.TIME_TYPE_CREATE)
+        tk.Radiobutton(frm, text='Create', value=ByDate.TIME_TYPE_CREATE, variable=self._time_type).pack(side=tk.TOP, fill=tk.Y)
+        tk.Radiobutton(frm, text='Modify', value=ByDate.TIME_TYPE_MODIFY, variable=self._time_type).pack(side=tk.TOP, fill=tk.Y)
+        #
+        frm = tk.LabelFrame(self, text='Time')
+        frm.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
         # row 1
-        row1 = tk.Frame(self)
+        row1 = tk.Frame(frm)
         row1.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         self._from, self._to = None, None
         self._date_from = tk.StringVar()
@@ -486,9 +537,9 @@ class ByDate(SearchCondition):
         jtk.MakePlaceHolder(e, "<from what day it was edited?>")
         btn = tk.Button(row1, text='...')
         btn['command'] = lambda: self.open_date_picker_(self._date_from)
-        btn.pack(side=tk.LEFT)
+        btn.pack(side=tk.LEFT, padx=5)
         # row 2
-        row2 = tk.Frame(self)
+        row2 = tk.Frame(frm)
         row2.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         self._date_to = tk.StringVar()
         self._date_to.trace('w', self.to_changed_)
@@ -497,7 +548,7 @@ class ByDate(SearchCondition):
         jtk.MakePlaceHolder(e, "<to what day it was edited?>")
         btn = tk.Button(row2, text='...')
         btn['command'] = lambda: self.open_date_picker_(self._date_to)
-        btn.pack(side=tk.LEFT)
+        btn.pack(side=tk.LEFT, padx=5)
 
     def open_date_picker_(self, var):
         option = {}
@@ -514,7 +565,7 @@ class ByDate(SearchCondition):
             var.set(str(dlg.date))
 
     def get_result(self):
-        return self._from, self._to
+        return self._time_type.get(), self._from, self._to
 
     def from_changed_(self, name, index, mode):
         try:
@@ -596,7 +647,9 @@ class NotePreview:
         tags = ','.join(i.name for i in note.tags)
         tk.Label(top, text='Tags: %s' % tags).pack(side=tk.TOP, anchor=tk.W)
         #
-        tk.Label(top, text='Edited: %s' % note.date).pack(side=tk.TOP, anchor=tk.W)
+        tk.Label(top, text='Created: %s' % note.date).pack(side=tk.TOP, anchor=tk.W)
+        #
+        tk.Label(top, text='Modified: %s' % note.date_modified).pack(side=tk.TOP, anchor=tk.W)
         #
         tk.Label(top, text='Size: %d B' % note.size).pack(side=tk.TOP, anchor=tk.W)
         #
@@ -639,8 +692,8 @@ class StatedDoc(jdb.DBRecordDoc):
     """
     除了数据表的记录的原始数据，还保存了附加状态
     """
-    def __init__(self, title, text=None, bulk=None, tags=[], date=None, sn=0, size=0):
-        jdb.DBRecordDoc.__init__(self, title, text, bulk, tags, date, sn, size)
+    def __init__(self, title, text=None, bulk=None, tags=[], date=None, date2=None, sn=0, size=0):
+        jdb.DBRecordDoc.__init__(self, title, text, bulk, tags, date, date2, sn, size)
         self._readonly = False
 
     @property
@@ -660,6 +713,7 @@ class StatedDoc(jdb.DBRecordDoc):
         result._bulk = raw.bulk
         result._tags = raw.tags
         result._date = raw.date
+        result._date2 = raw.date_modified
         result._size = raw.size
         return result
 
@@ -670,7 +724,9 @@ class OpenDocDlg(jtk.ModalDialog):
     # 2 sorting methods
     SORT_BY_ID = 0
     SORT_BY_DATE = 1
-    SORT_BY_SIZE = 2
+    SORT_BY_DATE2 = 2
+    SORT_BY_SIZE = 3
+    SORT_COUNT = 4
     """
     @return a tuple(array of serial number, array of DBRecordDoc, current page)
     """
@@ -679,7 +735,7 @@ class OpenDocDlg(jtk.ModalDialog):
         def __init__(self):
             self._hits = []
             self._curr_page = 0
-            self._sort_states = [False, False, False]
+            self._sort_states = [False * OpenDocDlg.SORT_COUNT]
 
         @property
         def hits(self):
@@ -706,7 +762,7 @@ class OpenDocDlg(jtk.ModalDialog):
         def clear(self):
             del self._hits[:]
             self._curr_page = 0
-            self._sort_states = [False, False]
+            self._sort_states = [False * OpenDocDlg.SORT_COUNT]
 
     def __init__(self, master, *a, **kw):
         self._store = kw.pop('database')
@@ -746,7 +802,7 @@ class OpenDocDlg(jtk.ModalDialog):
         frm = tk.LabelFrame(master, text='Result:')
         frm.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
         #
-        self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date', 'Size'],
+        self._note_list = ttk.Treeview(frm, columns=['ID', 'Title', 'Date1', 'Date2', 'Size'],
                                        show='headings',  # hide first icon column
                                        height=OpenDocDlg.PAGE_NUM,
                                        selectmode=tk.EXTENDED)  # multiple rows can be selected
@@ -768,8 +824,10 @@ class OpenDocDlg(jtk.ModalDialog):
         self._note_list.heading('ID', text='ID', command=self.sort_by_id_)
         self._note_list.heading('Title', text='Title')
         width = default_font.measure('9999-99-99')
-        self._note_list.column('Date', width=width, minwidth=width)
-        self._note_list.heading('Date', text='Date', command=self.sort_by_date_)
+        self._note_list.column('Date1', width=width, minwidth=width)
+        self._note_list.heading('Date1', text='Date Created', command=self.sort_by_date_)
+        self._note_list.column('Date2', width=width, minwidth=width)
+        self._note_list.heading('Date2', text='Date Modified', command=self.sort_by_date2_)
         width = default_font.measure('9999.99 MB')
         self._note_list.column('Size', width=width, minwidth=width, anchor=tk.E)
         self._note_list.heading('Size', text='Size', command=self.sort_by_size_)
@@ -809,7 +867,7 @@ class OpenDocDlg(jtk.ModalDialog):
         start = n * OpenDocDlg.PAGE_NUM
         stop = start + OpenDocDlg.PAGE_NUM
         for i, j in enumerate(self._state.hits[start:stop]):
-            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date, self.intuitive_nb_str(j.size)])
+            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date, j.date_modified, self.intuitive_nb_str(j.size)])
         if len(self._state.hits) > 0:
             self._note_list.selection_set('0')  # automatically select the 1st one
             self._note_list.focus('0')  # give the 1st one focus (visually)
@@ -843,11 +901,11 @@ class OpenDocDlg(jtk.ModalDialog):
             if len(tags) > 0:
                 conditions['tags'] = tags
         if self._sb_dat.enabled():
-            from_, to_ = self._sb_dat.get_result()
+            type_, from_, to_ = self._sb_dat.get_result()
             if from_ is not None:
-                conditions['from'] = from_
+                conditions['from' if type_ == ByDate.TIME_TYPE_CREATE else 'from2'] = from_
             if to_ is not None:
-                conditions['to'] = to_
+                conditions['to' if type_ == ByDate.TIME_TYPE_CREATE else 'to2'] = to_
         if self._sb_ord.enabled():
             lower, upper = self._sb_ord.get_result()
             if upper is not None:
@@ -887,6 +945,11 @@ class OpenDocDlg(jtk.ModalDialog):
     def sort_by_date_(self):
         self._state.sort_switch(OpenDocDlg.SORT_BY_DATE)
         self._state.hits.sort(key=lambda i: i.date, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE))
+        self.jump_page_(0)
+
+    def sort_by_date2_(self):
+        self._state.sort_switch(OpenDocDlg.SORT_BY_DATE2)
+        self._state.hits.sort(key=lambda i: i.date_modified, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE2))
         self.jump_page_(0)
 
     def sort_by_size_(self):
@@ -1666,6 +1729,7 @@ class MainApp(tk.Tk):
         errors = set()
         try:
             record = self._notes[editor]
+            record.date_modified = datetime.date.today()
         except KeyError:
             title = self._editor.get_caption(editor)
             record = StatedDoc(title)
