@@ -311,7 +311,7 @@ class DocPropertyDlg(jtk.ModalDialog):
         self._store = kw.pop('database')
         self._record = kw.pop('record')
         self._title = tk.StringVar(value=self._record.title)
-        self._date_created = tk.StringVar(value=str(self._record.date))
+        self._date_created = tk.StringVar(value=str(self._record.date_created))
         self._date_modified = tk.StringVar(value=str(self._record.date_modified))
         #
         kw['title'] = 'Document Property'
@@ -354,8 +354,8 @@ class DocPropertyDlg(jtk.ModalDialog):
         self._record.title = self._title.get().strip(' \n')
         self._record.tags = self._tag_picker.get_selection()
         date = self.get_date(self._date_created)
-        if date is not None and date != self._record.date:
-            self._record.date = date
+        if date is not None and date != self._record.date_created:
+            self._record.date_created = date
         date = self.get_date(self._date_modified)
         if date is not None and date != self._record.date_modified:
             self._record.date_modified = date
@@ -375,7 +375,7 @@ class DocPropertyDlg(jtk.ModalDialog):
 
     def change_date(self):
         current_date = self.get_date(self._date_created)
-        dlg = jtk.CalendarDlg(self, date=self._record.date if current_date is None else current_date)
+        dlg = jtk.CalendarDlg(self, date=self._record.date_created if current_date is None else current_date)
         dlg.show()
         if dlg.date != current_date:
             self._date_created.set(str(dlg.date))
@@ -647,7 +647,7 @@ class NotePreview:
         tags = ','.join(i.name for i in note.tags)
         tk.Label(top, text='Tags: %s' % tags).pack(side=tk.TOP, anchor=tk.W)
         #
-        tk.Label(top, text='Created: %s' % note.date).pack(side=tk.TOP, anchor=tk.W)
+        tk.Label(top, text='Created: %s' % note.date_created).pack(side=tk.TOP, anchor=tk.W)
         #
         tk.Label(top, text='Modified: %s' % note.date_modified).pack(side=tk.TOP, anchor=tk.W)
         #
@@ -712,7 +712,7 @@ class StatedDoc(jdb.DBRecordDoc):
         result._text = raw.script
         result._bulk = raw.bulk
         result._tags = raw.tags
-        result._date = raw.date
+        result._date = raw.date_created
         result._date2 = raw.date_modified
         result._size = raw.size
         return result
@@ -723,8 +723,8 @@ class OpenDocDlg(jtk.ModalDialog):
     PAGE_NUM = 8
     # 2 sorting methods
     SORT_BY_ID = 0
-    SORT_BY_DATE = 1
-    SORT_BY_DATE2 = 2
+    SORT_BY_DATE_CREATE = 1
+    SORT_BY_DATE_MODIFY = 2
     SORT_BY_SIZE = 3
     SORT_COUNT = 4
     """
@@ -735,7 +735,7 @@ class OpenDocDlg(jtk.ModalDialog):
         def __init__(self):
             self._hits = []
             self._curr_page = 0
-            self._sort_states = [False * OpenDocDlg.SORT_COUNT]
+            self._sort_states = [False] * OpenDocDlg.SORT_COUNT
 
         @property
         def hits(self):
@@ -762,7 +762,7 @@ class OpenDocDlg(jtk.ModalDialog):
         def clear(self):
             del self._hits[:]
             self._curr_page = 0
-            self._sort_states = [False * OpenDocDlg.SORT_COUNT]
+            self._sort_states[:] = [False] * OpenDocDlg.SORT_COUNT
 
     def __init__(self, master, *a, **kw):
         self._store = kw.pop('database')
@@ -867,7 +867,7 @@ class OpenDocDlg(jtk.ModalDialog):
         start = n * OpenDocDlg.PAGE_NUM
         stop = start + OpenDocDlg.PAGE_NUM
         for i, j in enumerate(self._state.hits[start:stop]):
-            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date, j.date_modified, self.intuitive_nb_str(j.size)])
+            self._note_list.insert('', tk.END, iid=str(i), values=[j.sn, j.title, j.date_created, j.date_modified, self.intuitive_nb_str(j.size)])
         if len(self._state.hits) > 0:
             self._note_list.selection_set('0')  # automatically select the 1st one
             self._note_list.focus('0')  # give the 1st one focus (visually)
@@ -943,13 +943,13 @@ class OpenDocDlg(jtk.ModalDialog):
         self.jump_page_(0)
 
     def sort_by_date_(self):
-        self._state.sort_switch(OpenDocDlg.SORT_BY_DATE)
-        self._state.hits.sort(key=lambda i: i.date, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE))
+        self._state.sort_switch(OpenDocDlg.SORT_BY_DATE_CREATE)
+        self._state.hits.sort(key=lambda i: i.date_created, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE_CREATE))
         self.jump_page_(0)
 
     def sort_by_date2_(self):
-        self._state.sort_switch(OpenDocDlg.SORT_BY_DATE2)
-        self._state.hits.sort(key=lambda i: i.date_modified, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE2))
+        self._state.sort_switch(OpenDocDlg.SORT_BY_DATE_MODIFY)
+        self._state.hits.sort(key=lambda i: i.date_modified, reverse=self._state.sort_state(OpenDocDlg.SORT_BY_DATE_MODIFY))
         self.jump_page_(0)
 
     def sort_by_size_(self):

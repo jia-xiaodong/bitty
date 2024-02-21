@@ -210,13 +210,14 @@ class DBRecordDoc(object):
         self.mark_dirty_(DocCols.bulk)
 
     @property
-    def date(self):
+    def date_created(self):
         return self._date
 
-    @date.setter
-    def date(self, value):
-        self._date = value
-        self.mark_dirty_(DocCols.date)
+    @date_created.setter
+    def date_created(self, value):
+        if self._date != value:
+            self._date = value
+            self.mark_dirty_(DocCols.date)
 
     @property
     def date_modified(self):
@@ -224,8 +225,9 @@ class DBRecordDoc(object):
 
     @date_modified.setter
     def date_modified(self, value):
-        self._date2 = value
-        self.mark_dirty_(DocCols.date2)
+        if self._date2 != value:
+            self._date2 = value
+            self.mark_dirty_(DocCols.date2)
 
     @property
     def tags(self):
@@ -394,7 +396,7 @@ class DocBase(object):
         except Exception as e:
             print('Error on select: %s' % e)
 
-    def update_doc(self, record):
+    def update_doc(self, record: DBRecordDoc):
         args = {}
         cols = []
         for i in record.unsaved_fields:
@@ -411,11 +413,11 @@ class DocBase(object):
                 args['tgs'] = DBRecordDoc.tags_str(record.tags)
                 cols.append('tags=:tgs')
             elif i == DocCols.date:
-                args['dat'] = record.date
-                cols.append('date=:dat')
+                args['dt1'] = record.date_created
+                cols.append('date=:dt1')
             elif i == DocCols.date2:
-                args['dat2'] = record.date
-                cols.append('date2=:dat2')
+                args['dt2'] = record.date_modified
+                cols.append('date2=:dt2')
         try:
             if len(cols) > 0:
                 sql = 'UPDATE docs SET %s WHERE id=%d' % (', '.join(cols), record.sn)
@@ -433,7 +435,7 @@ class DocBase(object):
                     DocBase.zip_(record.script),  # main text
                     sqlite3.Binary(record.bulk),  # images
                     DBRecordDoc.tags_str(record.tags),
-                    record.date,
+                    record.date_created,
                     record.date_modified)
             cur = self._con.cursor()
             cur.execute(sql, args)
