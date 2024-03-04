@@ -520,7 +520,7 @@ class ByDate(SearchCondition):
         #
         frm = tk.LabelFrame(self, text='Type')
         frm.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.NO, padx=5, pady=5)
-        self._time_type = tk.IntVar(value=ByDate.TIME_TYPE_CREATE)
+        self._time_type = tk.IntVar(value=ByDate.TIME_TYPE_MODIFY)
         tk.Radiobutton(frm, text='Create', value=ByDate.TIME_TYPE_CREATE, variable=self._time_type).pack(side=tk.TOP, fill=tk.Y)
         tk.Radiobutton(frm, text='Modify', value=ByDate.TIME_TYPE_MODIFY, variable=self._time_type).pack(side=tk.TOP, fill=tk.Y)
         #

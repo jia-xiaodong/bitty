@@ -328,7 +328,7 @@ class DocBase(object):
             cur = self._con.cursor()
             cur.execute(sql_select)
             # write to new database
-            sql_insert = 'INSERT INTO docs (title, text, bulk, tags, date, date2) VALUES(?,?,?,?,?)'
+            sql_insert = 'INSERT INTO docs (title, text, bulk, tags, date, date2) VALUES(?,?,?,?,?,?)'
             docs = [(ttl, txt, blk, '', dat, dat2) for ttl, txt, blk, dat, dat2 in cur.fetchall()]
             con.executemany(sql_insert, docs)
             con.commit()
