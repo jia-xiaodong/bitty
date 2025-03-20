@@ -157,12 +157,12 @@ class DBRecordDoc(object):
     @note: represents a database record in table "docs". For the table's columns, refer
            to the definition of enum "DocCols".
     """
-    def __init__(self, title, text=None, bulk=None, tags=[], date=None, date2=None, sn=0, size=0):
+    def __init__(self, title, text=None, bulk=None, tags=None, date=None, date2=None, sn=0, size=0):
         self._sn = sn
         self._title = title
         self._text = text  # json-format string
         self._bulk = bulk  # possible values: None, bytes 
-        self._tags = tags
+        self._tags = tags if tags is not None else []
         self._date = datetime.date.today() if date is None else date
         self._date2 = date2 if date2 is not None else (date if date is not None else datetime.date.today())
         self._dirty_flags = set()
