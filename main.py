@@ -391,11 +391,17 @@ class DocPropertyDlg(jtk.ModalDialog):
         dlg.show()
         if dlg.date != current_date:
             self._date_modified.set(str(dlg.date))
+            self._record.auto_set_modified_date = False
         self.set_indicator_(self._indicator2, True)
 
     def date2_changed_(self, name, index, mode):
         dt = self.get_date(self._date_modified)
         self.set_indicator_(self._indicator2, dt is not None)
+
+        # 手动更新“记录修改日期”，需禁止自动设置成当前日期
+        if self._record.auto_set_modified_date and \
+                dt and dt != self._record.date_modified:
+            self._record.auto_set_modified_date = False
 
     @staticmethod
     def set_indicator_(label, passed):
@@ -695,6 +701,7 @@ class StatedDoc(jdb.DBRecordDoc):
     def __init__(self, title, text=None, bulk=None, tags=[], date=None, date2=None, sn=0, size=0):
         jdb.DBRecordDoc.__init__(self, title, text, bulk, tags, date, date2, sn, size)
         self._readonly = False
+        self._auto_set_modified_date = True
 
     @property
     def readonly(self):
@@ -716,6 +723,14 @@ class StatedDoc(jdb.DBRecordDoc):
         result._date2 = raw.date_modified
         result._size = raw.size
         return result
+
+    @property
+    def auto_set_modified_date(self):
+        return self._auto_set_modified_date
+
+    @auto_set_modified_date.setter
+    def auto_set_modified_date(self, value):
+        self._auto_set_modified_date = value
 
 
 class OpenDocDlg(jtk.ModalDialog):
@@ -808,6 +823,7 @@ class OpenDocDlg(jtk.ModalDialog):
                                        selectmode=tk.EXTENDED)  # multiple rows can be selected
         self._note_list.pack(fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
         self._note_list.bind('<Double-1>', self.ok)
+        self._note_list.bind('<Shift_L>', self.ok)
         self._note_list.bind('<Shift_R>', self.ok)
         self._note_list.bind('<space>', self.open_preview_)
         self._note_list.bind(jex.mouse_right_button(), self.open_preview_)
@@ -1729,7 +1745,8 @@ class MainApp(tk.Tk):
         errors = set()
         try:
             record = self._notes[editor]
-            record.date_modified = datetime.date.today()
+            if record.auto_set_modified_date:
+                record.date_modified = datetime.date.today()
         except KeyError:
             title = self._editor.get_caption(editor)
             record = StatedDoc(title)
