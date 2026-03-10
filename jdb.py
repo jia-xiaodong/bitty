@@ -386,12 +386,13 @@ class DocBase(object):
             cur.execute(sql)
             docs = []
             for sn, tt, tg, dt, dt2, sz in cur.fetchall():
-                tg = [] if tg == '' else [int(i) for i in tg.split(',')]
-                tg = [DBRecordTag.forest_find(self._tags, i) for i in tg]
+                tg2 = [] if tg == '' else [int(i) for i in tg.split(',')]
+                tg3 = [DBRecordTag.forest_find(self._tags, i) for i in tg2]
+                tg4 = [i for i in tg3 if i is not None]
                 if tags is not None:
-                    if not any(DBRecordTag.forest_find(tags, i.sn) for i in tg):
+                    if not any(DBRecordTag.forest_find(tags, i.sn) for i in tg4):
                         continue
-                docs.append(DBRecordDoc(tt, None, None, tg, dt, dt2, sn, sz))
+                docs.append(DBRecordDoc(tt, None, None, tg4, dt, dt2, sn, sz))
             return docs
         except Exception as e:
             print('Error on select: %s' % e)
