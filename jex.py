@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -9,64 +9,18 @@ are all placed here.
 import functools
 import io
 import struct
-import sys
+from typing import BinaryIO
 from sys import platform
-
-
-def isPython3():
-    if sys.version > '3':
-        return True
-    return False
+from enum import Enum
 
 
 def is_str(s):
-    if isPython3():
-        return isinstance(s, str)
-    else:
-        return isinstance(s, basestring)
+    return isinstance(s, str)
 
 
-if not isPython3():
-    def enum1(*sequential, **named):
-        """
-        @param sequential:
-        @param named:
-        @return: a dynamically created enum.
-
-        Because in Python prior to 3.4, there's no built-in enum definition. So we have to
-        make it ourselves.
-        use case:
-          Numbers = enum1('ZERO', 'ONE', 'TWO')        --> Numbers.ZERO (aka. 0), Numbers.ONE (aka. 1)
-          Numbers = enum1(ONE=1, TWO=2, THREE='three') --> Numbers.THREE (aka. 'three')
-          getattr(Numbers, 'TWO') --> Numbers.TWO      --> 2
-        """
-        enums = dict(zip(sequential, range(len(sequential))), **named)
-        return type('Enum', (), enums)  # builtin function: type(new_cls_name, bases, attrs)
-
-
-    def enum2(*sequential, **named):
-        """
-        A more powerful enum creation than above
-        @param sequential:
-        @param named:
-        @return: a dynamically created enum.
-        this enum has not only above functions, but also a reverse indexing, such as:
-        Numbers.name[1]        --> 'ONE'
-        Numbers.name['three']  --> 'THREE'
-        """
-        enums = dict(zip(sequential, range(len(sequential))), **named)
-        reverse = dict((value, key) for key, value in enums.iteritems())
-        enums['name'] = reverse
-        return type('Enum', (), enums)
-
-
-if isPython3():
-    from enum import Enum
-    class PLATFORM(Enum):
-        Darwin = 0
-        Win = 1
-else:
-    PLATFORM = enum1(Darwin=0, Win=1)
+class PLATFORM(Enum):
+    Darwin = 0
+    Win = 1
 
 
 def is_macos():
@@ -82,10 +36,7 @@ def mouse_right_button():
 
 
 def sort_by_cmp(array, cmp, reverse=False):
-    if isPython3():
-        array.sort(key=functools.cmp_to_key(cmp), reverse=reverse)
-    else:
-        array.sort(cmp=cmp, reverse=reverse)
+    array.sort(key=functools.cmp_to_key(cmp), reverse=reverse)
 
 
 class InvalidArgumentTypeError(ValueError):
@@ -198,7 +149,7 @@ class FilePile:
             self.offset = offset
             self.size = size
 
-    def __init__(self, fo, mode='r'):
+    def __init__(self, fo: BinaryIO, mode='r'):
         if mode not in ('r', 'w'):
             raise RuntimeError('Only "w" or "r" supported.')
         #
@@ -208,7 +159,7 @@ class FilePile:
                 raise ValueError('Wrong file format')
         #
         self._mode = mode
-        self._fo = fo
+        self._fo: BinaryIO = fo
         #
         if mode == 'r':
             self._file_list = self.build_file_list_()
@@ -231,7 +182,10 @@ class FilePile:
     def append(self, filename, content):
         if self._mode != 'w':
             raise RuntimeError('Only "w" mode supports append.')
-        filename = filename.encode(encoding='utf-8')
+        if isinstance(filename, str):
+            filename = filename.encode('utf-8')
+        if isinstance(content, str):
+            content = content.encode('utf-8')
         length = len(filename)
         tlv = struct.pack('>BI%ds' % length, FilePile.TYPE_FILENAME, length, filename)
         self._fo.write(tlv)
@@ -252,7 +206,7 @@ class FilePile:
             file_list = []
             error = RuntimeError('Wrong file format')
             tl = self._fo.read(5)  # tag (one byte) + length (4 bytes)
-            while tl != '':
+            while tl != b'':
                 tag, length = struct.unpack('>BI', tl)
                 if tag != FilePile.TYPE_FILENAME:
                     raise error
@@ -295,7 +249,7 @@ def unit_test_write():
 
 
 def unit_test_read():
-    fp = FilePile(open('a.bin'))
+    fp = FilePile(open('a.bin', 'rb'))
     f = fp.open('01.jpg')
     s = f.read()
     print(s)

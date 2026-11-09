@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -7,33 +7,28 @@ Database related functions are organized here.
 
 import sqlite3
 import datetime
-import jex
 import zlib
 import hashlib
 
-if jex.isPython3():
-    from enum import Enum
-    class DocCols(Enum):
-        id = 0
-        title = 1
-        text = 2
-        bulk = 3
-        tags = 4
-        date = 5
-        date2 = 6
-        COUNT = 7
+from enum import Enum
 
 
-    class TagCols(Enum):
-        id = 0
-        name = 1
-        base = 2
-        COUNT = 3
+class DocCols(Enum):
+    id = 0
+    title = 1
+    text = 2
+    bulk = 3
+    tags = 4
+    date = 5
+    date2 = 6
+    COUNT = 7
 
 
-else: # Python 2.x
-    DocCols = jex.enum2('id', 'title', 'text', 'bulk', 'tags', 'date', 'date2', 'COUNT')
-    TagCols = jex.enum2('id', 'name', 'base', 'COUNT')
+class TagCols(Enum):
+    id = 0
+    name = 1
+    base = 2
+    COUNT = 3
 
 
 class DBRecordTag(object):
@@ -188,7 +183,7 @@ class DBRecordDoc(object):
 
     @script.setter
     def script(self, value):
-        byte_array = value.encode(encoding='utf-8')  # md5 can't process unicode directly
+        byte_array = value.encode(encoding='utf-8')
         digest = hashlib.md5(byte_array).digest()
         if self._digests.get('text', '') == digest:
             return
@@ -479,10 +474,7 @@ class DocBase(object):
     def insert_tag(self, tag):
         try:
             cur = self._con.cursor()
-            if jex.isPython3():
-                columns = (TagCols(1).name, TagCols(2).name)
-            else:
-                columns = (TagCols.name[1], TagCols.name[2])
+            columns = (TagCols(1).name, TagCols(2).name)
             cur.execute('INSERT INTO tags (%s, %s) VALUES(?,?)' % columns, (tag.name, tag.parent))
             tag.sn = cur.lastrowid
             self._con.commit()
@@ -540,12 +532,8 @@ class DocBase(object):
         try:
             with sqlite3.connect(filename) as con:
                 cur = con.cursor()
-                if jex.isPython3():
-                    tables = {'docs': [DocCols(i).name for i in range(DocCols.COUNT.value)],
-                              'tags': [TagCols(i).name for i in range(TagCols.COUNT.value)]}
-                else:
-                    tables = {'docs': [DocCols.name[i] for i in range(DocCols.COUNT)],
-                              'tags': [TagCols.name[i] for i in range(TagCols.COUNT)]}
+                tables = {'docs': [DocCols(i).name for i in range(DocCols.COUNT.value)],
+                          'tags': [TagCols(i).name for i in range(TagCols.COUNT.value)]}
                 return all(is_column_identical(cur, i, j) for i, j in tables.items())
         except:
             return False
@@ -577,8 +565,8 @@ class DocBase(object):
     @staticmethod
     def zip_(s):
         if len(s) == 0:
-            return sqlite3.Binary('')
-        s = s.encode(encoding='utf-8')  # zlib accepts only str, not unicode str.
+            return sqlite3.Binary(b'')
+        s = s.encode(encoding='utf-8')
         return sqlite3.Binary(zlib.compress(s, 6))
 
     @staticmethod

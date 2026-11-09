@@ -1,24 +1,14 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import base64
-import sys
 import jex
 import math
-
-if jex.isPython3():
-    import tkinter as tk
-    from tkinter import ttk
-    import tkinter.messagebox as tkMessageBox
-    import tkinter.filedialog as tkFileDialog
-    import tkinter.font as tkFont
-    from enum import Enum, IntEnum
-
-else:
-    import Tkinter as tk
-    import ttk
-    import tkMessageBox
-    import tkFileDialog
-    import tkFont
+import tkinter as tk
+from tkinter import ttk
+import tkinter.messagebox as tkMessageBox
+import tkinter.filedialog as tkFileDialog
+import tkinter.font as tkFont
+from enum import Enum, IntEnum
 
 import jdb, jtk, jex
 import os
@@ -1393,24 +1383,18 @@ class MainApp(tk.Tk):
     TITLE = 'bitty'
     UNNAMED = 'untitled'
     #
-    if jex.isPython3():
-        class SAVE(Enum):
-            Finish = 0
-            FailContent = 1
-            FailTitle = 2
-    else:
-        SAVE = jex.enum1(Finish=0, FailContent=1, FailTitle=2)
+    class SAVE(Enum):
+        Finish = 0
+        FailContent = 1
+        FailTitle = 2
 
     # All text editors are using same font
     DEFAULT_FONT = 'Helvetica' if platform == 'darwin' else '宋体'
     DEFAULT_SIZE = 18
     #
-    if jex.isPython3():
-        class RELY(Enum):
-            DB = 0
-            DOC = 1
-    else:
-        RELY = jex.enum1(DB=0, DOC=1)
+    class RELY(Enum):
+        DB = 0
+        DOC = 1
 
     EVENT_DB_EXIST = '<<DBExist>>'  # sent when database is opened / closed.
     EVENT_DOC_EXIST = '<<DocExist>>'  # sent when first document opened / last document closed.
@@ -2422,7 +2406,7 @@ At the age of 40.
     def all_custom_windows(text: tk.Text, cls=None):
         windows = text.window_names()
         if len(windows) > 0 and jex.is_str(windows[0]):
-            windows = map(text.nametowidget, windows)  # name is converted to widget object
+            windows = list(map(text.nametowidget, windows))  # name is converted to widget object
         if cls is not None:
             windows = [w for w in windows if isinstance(w, cls)]
         return windows

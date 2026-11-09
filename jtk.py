@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -8,17 +8,11 @@ import base64
 
 import jex
 
-if jex.isPython3():
-    import tkinter as tk
-    from tkinter import ttk
-    import tkinter.messagebox as tkMessageBox
-    import tkinter.filedialog as tkFileDialog
-    import tkinter.font as tkFont
-else:
-    import Tkinter as tk
-    import ttk
-    import tkFileDialog
-    import tkFont
+import tkinter as tk
+from tkinter import ttk
+import tkinter.messagebox as tkMessageBox
+import tkinter.filedialog as tkFileDialog
+import tkinter.font as tkFont
 
 import calendar
 import datetime
@@ -502,7 +496,7 @@ class LineNumberBar(tk.Canvas):
     def on_changed_(self, event):
         self.redraw_()
         # debug
-        #print 'Canvas event. No:%s, Type:%s' % (event.serial, event.type)
+        # print('Canvas event. No:%s, Type:%s' % (event.serial, event.type))
 
     def resize_width_(self, line_num):
         """
@@ -582,7 +576,7 @@ class TextOperationSet:
     def custom_ops_(self):
         bindings = ['<Command-a>', '<Control-a>']
         self._ops['SelectAll'] = self.select_all
-        index = curr_os.value if jex.isPython3() else curr_os
+        index = curr_os.value
         self._txt.bind(bindings[index], self.select_all)
         #
         bindings = ['<Command-Up>', '<Control-Up>']
@@ -1496,10 +1490,7 @@ class ImageBox(tk.Canvas, StorageMixin):
 
     def display_(self, evt=None):
         scale = self._scale.get()
-        if jex.isPython3():
-            new_w, new_h = self._src.width*scale//100, self._src.height*scale//100
-        else:
-            new_w, new_h = self._src.width*scale/100, self._src.height*scale/100
+        new_w, new_h = self._src.width*scale//100, self._src.height*scale//100
         # resize canvas to accommodate image
         if self._dst is None:
             self.config(width=new_w, height=new_h)

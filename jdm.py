@@ -1,22 +1,12 @@
 import jex
 
-# tkinter related libs
-if jex.isPython3():
-    import tkinter as tk
-    from tkinter import ttk
-    import tkinter.messagebox as tkMessageBox
-    import tkinter.filedialog as tkFileDialog
-    import tkinter.font as tkFont
-else:
-    import Tkinter as tk
-    import ttk
-    import tkFileDialog
-    import tkFont
-
-
-if jex.isPython3():
-    from enum import Enum
-    from typing import List
+import tkinter as tk
+from tkinter import ttk
+import tkinter.messagebox as tkMessageBox
+import tkinter.filedialog as tkFileDialog
+import tkinter.font as tkFont
+from enum import Enum
+from typing import List
 
 # common libs
 import re
